@@ -1,3 +1,8 @@
+'use client';
+
+import { useState } from "react";
+import { WalletConnectButton } from "@/components/WalletConnectButton";
+
 type StrategyMode = "conservative" | "balanced" | "aggressive";
 
 const mockChains = [
@@ -40,8 +45,14 @@ const mockGlobalRisk = {
   comment: "当前组合风险可控，已启用自动防御策略。如市场波动加剧，将自动触发跨链“逃生”计划。",
 };
 
+const STRATEGY_MODES: { id: StrategyMode; label: string; desc: string }[] = [
+  { id: "conservative", label: "保守", desc: "优先保本，提前减仓" },
+  { id: "balanced", label: "均衡", desc: "风险收益平衡" },
+  { id: "aggressive", label: "激进", desc: "追求收益，容忍波动" },
+];
+
 export default function DashboardPage() {
-  const currentMode = "balanced" as StrategyMode;
+  const [currentMode, setCurrentMode] = useState<StrategyMode>("balanced");
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -56,6 +67,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs sm:text-sm">
+            <WalletConnectButton variant="compact" showError={false} />
             <span className="rounded-full bg-emerald-500/15 px-3 py-1 font-medium text-emerald-300">
               自动防御 · 已开启
             </span>
@@ -149,15 +161,12 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              {[
-                { id: "conservative", label: "保守", desc: "优先保本，提前减仓" },
-                { id: "balanced", label: "均衡", desc: "风险收益平衡" },
-                { id: "aggressive", label: "激进", desc: "追求收益，容忍波动" },
-              ].map((mode) => {
-                const active = currentMode === (mode.id as StrategyMode);
+              {STRATEGY_MODES.map((mode) => {
+                const active = currentMode === mode.id;
                 return (
                   <button
                     key={mode.id}
+                    onClick={() => setCurrentMode(mode.id)}
                     className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm ${
                       active
                         ? "border-sky-400 bg-sky-500/20 text-sky-100"

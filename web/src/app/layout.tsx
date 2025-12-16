@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { WalletConnectButton } from "@/components/WalletConnectButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -51,6 +52,9 @@ export default function RootLayout({
                 >
                   仪表盘
                 </a>
+                <div className="ml-2">
+                  <WalletConnectButton variant="compact" showError={false} />
+                </div>
               </nav>
             </div>
           </header>

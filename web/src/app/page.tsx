@@ -1,3 +1,5 @@
+import { WalletConnectButton } from "@/components/WalletConnectButton";
+
 export default function Home() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -11,7 +13,7 @@ export default function Home() {
             </div>
             <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl md:text-5xl">
               动态跨链安全监控与保险
-            </h1>
+          </h1>
             <p className="max-w-xl text-sm leading-relaxed text-slate-200 sm:text-base">
               OmniAegis 利用大模型对你在全链上的资产组合进行实时监控，结合协议健康度、链安全态势与市场波动，
               在风险超过阈值时通过 ZetaChain 的跨链执行能力，自动触发“逃生”与保险策略，为你的多链资产提供主动防御。
@@ -22,9 +24,7 @@ export default function Home() {
               strategies atomically via omnichain smart contracts.
             </p>
             <div className="flex flex-wrap gap-3 pt-2">
-              <button className="rounded-full bg-sky-500 px-5 py-2.5 text-sm font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400">
-                连接钱包 · 启动防御
-              </button>
+              <WalletConnectButton />
               <button className="rounded-full border border-slate-600/80 px-5 py-2.5 text-sm font-medium text-slate-100 transition hover:border-slate-200/90 hover:bg-slate-900/60">
                 查看系统架构
               </button>
@@ -165,9 +165,9 @@ export default function Home() {
               </p>
               <p className="mt-1 text-slate-300">
                 通过 ZetaChain 全链合约与消息传递，原子化执行跨链“逃生”与保险动作。
-              </p>
-            </div>
-          </div>
+          </p>
+        </div>
+        </div>
         </section>
 
         <footer className="border-t border-slate-800 pt-4 text-xs text-slate-500">
