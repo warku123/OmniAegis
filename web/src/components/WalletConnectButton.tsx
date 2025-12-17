@@ -30,69 +30,69 @@ export function WalletConnectButton({
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const { ethereum } = window as any;
-    if (!ethereum) return;
+   useEffect(() => {
+     if (typeof window === "undefined") return;
+     const { ethereum } = window as any;
+     if (!ethereum) return;
 
-    // 监听账户/网络切换，保持前端状态同步
-    const handleAccountsChanged = (accounts: string[]) => {
-      setAccount(accounts[0] ?? null);
-    };
+     // 监听账户/网络切换，保持前端状态同步
+     const handleAccountsChanged = (accounts: string[]) => {
+       setAccount(accounts[0] ?? null);
+     };
 
-    ethereum.on?.("accountsChanged", handleAccountsChanged);
+     ethereum.on?.("accountsChanged", handleAccountsChanged);
 
-    return () => {
-      ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
-    };
-  }, []);
+     return () => {
+       ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
+     };
+   }, []);
 
-  const shortAddress = (addr: string) =>
-    addr.slice(0, 6) + "..." + addr.slice(-4);
+   const shortAddress = (addr: string) =>
+     addr.slice(0, 6) + "..." + addr.slice(-4);
 
-  const ensureZetaChainNetwork = async (provider: any) => {
-    try {
-      await provider.send("wallet_switchEthereumChain", [
-        { chainId: ZETACHAIN_TESTNET_PARAMS.chainId },
-      ]);
-    } catch (switchError: any) {
-      // 4902: 未添加该网络，则尝试添加
-      if (switchError?.code === 4902) {
-        await provider.send("wallet_addEthereumChain", [
-          ZETACHAIN_TESTNET_PARAMS,
-        ]);
-      } else {
-        console.error("切换网络失败:", switchError);
-      }
-    }
-  };
+   const ensureZetaChainNetwork = async (provider: any) => {
+     try {
+       await provider.send("wallet_switchEthereumChain", [
+         { chainId: ZETACHAIN_TESTNET_PARAMS.chainId },
+       ]);
+     } catch (switchError: any) {
+       // 4902: 未添加该网络，则尝试添加
+       if (switchError?.code === 4902) {
+         await provider.send("wallet_addEthereumChain", [
+           ZETACHAIN_TESTNET_PARAMS,
+         ]);
+       } else {
+         console.error("切换网络失败:", switchError);
+       }
+     }
+   };
 
-  const connectWallet = async () => {
-    setErrorMsg(null);
-    if (typeof window === "undefined") return;
-    const { ethereum } = window as any;
+   const connectWallet = async () => {
+     setErrorMsg(null);
+     if (typeof window === "undefined") return;
+     const { ethereum } = window as any;
 
-    if (!ethereum) {
-      setErrorMsg("未检测到以太坊钱包，请先安装 MetaMask 或兼容钱包。");
-      return;
-    }
+     if (!ethereum) {
+       setErrorMsg("未检测到以太坊钱包，请先安装 MetaMask 或兼容钱包。");
+       return;
+     }
 
-    try {
-      setStatus("connecting");
-      const provider = new ethers.BrowserProvider(ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
-      if (!accounts || accounts.length === 0) {
-        throw new Error("未获取到账户");
-      }
-      await ensureZetaChainNetwork(provider);
-      setAccount(accounts[0]);
-      setStatus("connected");
-    } catch (err: any) {
-      console.error("连接钱包失败:", err);
-      setStatus("error");
-      setErrorMsg(err?.message ?? "连接钱包失败，请稍后重试。");
-    }
-  };
+     try {
+       setStatus("connecting");
+       const provider = new ethers.BrowserProvider(ethereum);
+       const accounts = await provider.send("eth_requestAccounts", []);
+       if (!accounts || accounts.length === 0) {
+         throw new Error("未获取到账户");
+       }
+       await ensureZetaChainNetwork(provider);
+       setAccount(accounts[0]);
+       setStatus("connected");
+     } catch (err: any) {
+       console.error("连接钱包失败:", err);
+       setStatus("error");
+       setErrorMsg(err?.message ?? "连接钱包失败，请稍后重试。");
+     }
+   };
 
   const buttonLabel =
     status === "connecting"
@@ -155,3 +155,5 @@ export function WalletConnectButton({
     </div>
   );
 }
+
+
