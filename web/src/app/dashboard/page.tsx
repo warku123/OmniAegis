@@ -74,6 +74,28 @@ type AssetState = {
   error: string | null;
 };
 
+type UserStrategy = {
+  mode: StrategyMode;
+  overallThreshold: number; // 总体安全分低于多少触发（0-100）
+  protocolRiskThreshold: number; // 任一链协议风险高于多少触发（0-100）
+  autoExecute: boolean; // 是否允许 AI 自动执行（否则仅提示 + 一键确认）
+  transferRatio: number; // 触发时建议调整的仓位比例（0-100）
+  protectStablecoins: boolean; // 是否优先保护稳定币仓位
+  protectBlueChips: boolean; // 是否优先保护蓝筹资产
+  perChainOverallThresholds: Record<number, number>; // 针对每条链单独配置的总体安全分阈值（可覆盖全局）
+  perChainProtocolThresholds: Record<number, number>; // 每条链单独的协议风险阈值
+  perChainTransferRatios: Record<number, number>; // 每条链单独的调仓比例
+  // 跨链执行相关偏好
+  primarySafeChainId: number | null; // 首选逃生链
+  secondarySafeChainId: number | null; // 备选逃生链
+  minCrossChainValueUsd: number; // 最小跨链规模（USD 估值）
+  maxDailyExitCount: number; // 每日最大自动执行次数
+  maxSlippagePercent: number; // 允许的最大滑点（百分比）
+  maxBridgeFeePercent: number; // 允许的最大跨链手续费占比（百分比）
+  preferNativeBridgeOnly: boolean; // 是否只使用原生跨链通道
+  avoidChainIds: number[]; // 不希望作为落地点的链
+};
+
 const ASSET_CHAINS: AssetChainConfig[] = [
   {
     id: 7001,
@@ -112,6 +134,9 @@ export default function DashboardPage() {
   const [currentMode, setCurrentMode] = useState<StrategyMode>("balanced");
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [assetStates, setAssetStates] = useState<Record<number, AssetState>>({});
+  const [userStrategy, setUserStrategy] = useState<UserStrategy | null>(null);
+  const [activeThresholdChainId, setActiveThresholdChainId] =
+    useState<number>(7001); // 默认在 ZetaChain 上配置
   const {
     account,
     isGuardian,
@@ -190,6 +215,56 @@ export default function DashboardPage() {
   const formatTime = (timestamp: bigint) => {
     const date = new Date(Number(timestamp) * 1000);
     return date.toLocaleString("zh-CN");
+  };
+
+  // 初始化用户策略（从 localStorage 读取）
+  useEffect(() => {
+    if (!account) return;
+    try {
+      const key = `omniAegis:strategy:${account.toLowerCase()}`;
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as UserStrategy;
+        setUserStrategy(parsed);
+        setCurrentMode(parsed.mode);
+      } else {
+        const defaultStrategy: UserStrategy = {
+          mode: "balanced",
+          overallThreshold: 60,
+          protocolRiskThreshold: 75,
+          autoExecute: false,
+          transferRatio: 50,
+          protectStablecoins: true,
+          protectBlueChips: true,
+          perChainOverallThresholds: {},
+          perChainProtocolThresholds: {},
+          perChainTransferRatios: {},
+          primarySafeChainId: 7001,
+          secondarySafeChainId: 80002,
+          minCrossChainValueUsd: 50,
+          maxDailyExitCount: 3,
+          maxSlippagePercent: 1,
+          maxBridgeFeePercent: 1,
+          preferNativeBridgeOnly: true,
+          avoidChainIds: [],
+        };
+        setUserStrategy(defaultStrategy);
+        window.localStorage.setItem(key, JSON.stringify(defaultStrategy));
+      }
+    } catch (e) {
+      console.error("加载本地策略失败:", e);
+    }
+  }, [account]);
+
+  const saveStrategy = (strategy: UserStrategy) => {
+    setUserStrategy(strategy);
+    if (!account) return;
+    try {
+      const key = `omniAegis:strategy:${account.toLowerCase()}`;
+      window.localStorage.setItem(key, JSON.stringify(strategy));
+    } catch (e) {
+      console.error("保存本地策略失败:", e);
+    }
   };
 
   // 加载各测试网的原生资产余额（仅在有账户时触发）
@@ -818,7 +893,7 @@ export default function DashboardPage() {
                   策略配置中心
                 </h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  设置 AI 风控的触发阈值与优先执行的防御动作，当前为前端本地示意配置。
+                  为当前地址设置 AI 风控的触发阈值与优先执行的防御动作（当前策略仅保存在本地，后续可上链到 Strategy 合约）。
                 </p>
               </div>
 
@@ -833,7 +908,12 @@ export default function DashboardPage() {
                       return (
                         <button
                           key={mode.id}
-                          onClick={() => setCurrentMode(mode.id)}
+                          onClick={() => {
+                            setCurrentMode(mode.id);
+                            if (userStrategy) {
+                              saveStrategy({ ...userStrategy, mode: mode.id });
+                            }
+                          }}
                           className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm ${
                             active
                               ? "border-sky-400 bg-sky-500/20 text-sky-100"
@@ -846,90 +926,429 @@ export default function DashboardPage() {
                     })}
                   </div>
                   <p className="text-[11px] text-slate-400">
-                    不同风险偏好会影响 AI 对「是否立即触发逃生」的判断阈值（示意逻辑，后续可由后端/合约持久化策略）。
+                    不同风险偏好会影响 AI 对「是否立即触发逃生」的判断阈值（未来后端/合约可以直接读取并执行）。
                   </p>
                 </div>
 
                 <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    触发阈值（示意）
+                    触发阈值（按链）
                   </p>
-                  <div className="space-y-2 text-[11px] text-slate-300">
-                    <div className="flex items-center justify-between">
-                      <span>总体安全分低于</span>
-                      <span className="font-mono text-amber-300">60</span>
+                  <div className="space-y-3 text-[11px] text-slate-300">
+                    {/* 选择要配置的链 */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {ASSET_CHAINS.map((chain) => {
+                        const chainMeta = CHAIN_NAMES[chain.id];
+                        const active = activeThresholdChainId === chain.id;
+                        return (
+                          <button
+                            key={chain.id}
+                            onClick={() => setActiveThresholdChainId(chain.id)}
+                            className={`rounded-full border px-2.5 py-1 text-[11px] ${
+                              active
+                                ? "border-sky-400 bg-sky-500/20 text-sky-100"
+                                : "border-slate-700 text-slate-300 hover:border-slate-500"
+                            }`}
+                          >
+                            {chainMeta?.symbol ?? chain.symbol}
+                          </button>
+                        );
+                      })}
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-900">
-                      <div className="h-full w-3/5 bg-amber-500" />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>任一链协议风险高于</span>
-                      <span className="font-mono text-rose-300">75</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-900">
-                      <div className="h-full w-3/4 bg-rose-500" />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span>市场波动超过近 30 天均值的</span>
-                      <span className="font-mono text-sky-300">1.5x</span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-900">
-                      <div className="h-full w-2/3 bg-sky-500" />
-                    </div>
+
+                    {(() => {
+                      if (!userStrategy) return null;
+                      const chainId = activeThresholdChainId;
+                      const chainMeta = CHAIN_NAMES[chainId];
+
+                      const baseOverall = userStrategy.overallThreshold ?? 60;
+                      const baseProtocol =
+                        userStrategy.protocolRiskThreshold ?? 75;
+                      const baseRatio = userStrategy.transferRatio ?? 50;
+
+                      const perOverall =
+                        userStrategy.perChainOverallThresholds?.[chainId];
+                      const perProtocol =
+                        userStrategy.perChainProtocolThresholds?.[chainId];
+                      const perRatio =
+                        userStrategy.perChainTransferRatios?.[chainId];
+
+                      const chainOverall = perOverall ?? baseOverall;
+                      const chainProtocol = perProtocol ?? baseProtocol;
+                      const chainRatio = perRatio ?? baseRatio;
+
+                      return (
+                        <div className="space-y-3">
+                          <p className="text-[11px] text-slate-400">
+                            当前配置链：{" "}
+                            <span className="font-semibold text-slate-100">
+                              {chainMeta?.name ?? `Chain ${chainId}`}
+                            </span>
+                          </p>
+
+                          {/* 该链总体安全分阈值 */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span>该链总体安全分低于</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={chainOverall}
+                                  onChange={(e) => {
+                                    const v = Math.min(
+                                      100,
+                                      Math.max(0, Number(e.target.value) || 0)
+                                    );
+                                    saveStrategy({
+                                      ...userStrategy,
+                                      perChainOverallThresholds: {
+                                        ...userStrategy.perChainOverallThresholds,
+                                        [chainId]: v,
+                                      },
+                                    });
+                                  }}
+                                  className="w-14 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-right font-mono text-amber-300 outline-none focus:border-amber-400"
+                                />
+                                <span className="text-slate-500">/ 100</span>
+                              </div>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={chainOverall}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                saveStrategy({
+                                  ...userStrategy,
+                                  perChainOverallThresholds: {
+                                    ...userStrategy.perChainOverallThresholds,
+                                    [chainId]: v,
+                                  },
+                                });
+                              }}
+                              className="w-full accent-amber-400"
+                            />
+                          </div>
+
+                          {/* 该链协议风险阈值 */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span>该链协议风险高于</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={chainProtocol}
+                                  onChange={(e) => {
+                                    const v = Math.min(
+                                      100,
+                                      Math.max(0, Number(e.target.value) || 0)
+                                    );
+                                    saveStrategy({
+                                      ...userStrategy,
+                                      perChainProtocolThresholds: {
+                                        ...userStrategy.perChainProtocolThresholds,
+                                        [chainId]: v,
+                                      },
+                                    });
+                                  }}
+                                  className="w-14 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-right font-mono text-rose-300 outline-none focus:border-rose-400"
+                                />
+                                <span className="text-slate-500">/ 100</span>
+                              </div>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={chainProtocol}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                saveStrategy({
+                                  ...userStrategy,
+                                  perChainProtocolThresholds: {
+                                    ...userStrategy.perChainProtocolThresholds,
+                                    [chainId]: v,
+                                  },
+                                });
+                              }}
+                              className="w-full accent-rose-400"
+                            />
+                          </div>
+
+                          {/* 该链调仓比例 */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span>触发时调整该链持仓比例</span>
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={chainRatio}
+                                  onChange={(e) => {
+                                    const v = Math.min(
+                                      100,
+                                      Math.max(0, Number(e.target.value) || 0)
+                                    );
+                                    saveStrategy({
+                                      ...userStrategy,
+                                      perChainTransferRatios: {
+                                        ...userStrategy.perChainTransferRatios,
+                                        [chainId]: v,
+                                      },
+                                    });
+                                  }}
+                                  className="w-14 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-right font-mono text-sky-300 outline-none focus:border-sky-400"
+                                />
+                                <span className="text-slate-500">%</span>
+                              </div>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              step={1}
+                              value={chainRatio}
+                              onChange={(e) => {
+                                const v = Number(e.target.value);
+                                saveStrategy({
+                                  ...userStrategy,
+                                  perChainTransferRatios: {
+                                    ...userStrategy.perChainTransferRatios,
+                                    [chainId]: v,
+                                  },
+                                });
+                              }}
+                              className="w-full accent-sky-400"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
 
               <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-[11px] text-slate-300 sm:text-xs">
                 <p className="text-xs font-semibold text-slate-200">
-                  逃生策略偏好（示意）
+                  跨链执行参数
                 </p>
-                <div className="grid gap-3 md:grid-cols-3">
-                  <label className="flex items-start gap-2 rounded-2xl bg-slate-900/70 p-3">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-100">
-                        优先跨链转移到高安全分链
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
-                        当链级/协议风险过高时，将核心资产迁移至高分链（如 ZetaChain
-                        + Ethereum）。
-                      </p>
+
+                {/* 落地点选择 */}
+                <div className="space-y-2">
+                  <p className="text-[11px] text-slate-400">
+                    选择优先落地点链和备选落地点链（当主链安全分也不达标时可退到备选链）。
+                  </p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-[11px] text-slate-400">首选落地点链</p>
+                      <select
+                        value={userStrategy?.primarySafeChainId ?? 7001}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          const v = Number(e.target.value);
+                          saveStrategy({
+                            ...userStrategy,
+                            primarySafeChainId: v,
+                          });
+                        }}
+                        className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 outline-none focus:border-sky-400"
+                      >
+                        {ASSET_CHAINS.map((chain) => {
+                          const meta = CHAIN_NAMES[chain.id];
+                          return (
+                            <option key={chain.id} value={chain.id}>
+                              {meta?.name ?? chain.name}
+                            </option>
+                          );
+                        })}
+                      </select>
                     </div>
-                  </label>
-                  <label className="flex items-start gap-2 rounded-2xl bg-slate-900/70 p-3">
-                    <input
-                      type="checkbox"
-                      defaultChecked
-                      className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-100">
-                        优先减杠杆并回收至稳定币
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
-                        清理高风险借贷头寸，逐步回收至 USDC/USDT 等稳定币。
-                      </p>
+                    <div className="space-y-1">
+                      <p className="text-[11px] text-slate-400">备选落地点链</p>
+                      <select
+                        value={userStrategy?.secondarySafeChainId ?? 80002}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          const v = Number(e.target.value);
+                          saveStrategy({
+                            ...userStrategy,
+                            secondarySafeChainId: v,
+                          });
+                        }}
+                        className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-100 outline-none focus:border-sky-400"
+                      >
+                        <option value="">（无备选）</option>
+                        {ASSET_CHAINS.map((chain) => {
+                          const meta = CHAIN_NAMES[chain.id];
+                          return (
+                            <option key={chain.id} value={chain.id}>
+                              {meta?.name ?? chain.name}
+                            </option>
+                          );
+                        })}
+                      </select>
                     </div>
-                  </label>
-                  <label className="flex items-start gap-2 rounded-2xl bg-slate-900/70 p-3">
-                    <input
-                      type="checkbox"
-                      className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
-                    />
-                    <div>
-                      <p className="font-medium text-slate-100">
-                        自动补齐跨链保险覆盖
-                      </p>
-                      <p className="mt-0.5 text-[11px] text-slate-400">
-                        检测到保障缺口时，调用跨链保险协议补齐（规划中，后续可对接真实协议）。
-                      </p>
+                  </div>
+                </div>
+
+                {/* 规模与频率控制 */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-400">
+                      最小跨链规模（USD 估值）
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        value={userStrategy?.minCrossChainValueUsd ?? 50}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          saveStrategy({
+                            ...userStrategy,
+                            minCrossChainValueUsd: v,
+                          });
+                        }}
+                        className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right font-mono text-slate-100 outline-none focus:border-sky-400"
+                      />
+                      <span className="text-slate-500">USD</span>
                     </div>
-                  </label>
+                    <p className="text-[10px] text-slate-500">
+                      小于该数值的风险敞口只告警，不自动跨链，避免 gas 浪费。
+                    </p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-400">
+                      每日最大自动防御次数
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        value={userStrategy?.maxDailyExitCount ?? 3}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          const v = Math.max(0, Number(e.target.value) || 0);
+                          saveStrategy({
+                            ...userStrategy,
+                            maxDailyExitCount: v,
+                          });
+                        }}
+                        className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right font-mono text-slate-100 outline-none focus:border-sky-400"
+                      />
+                      <span className="text-slate-500">次/天</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      限制 AI 在极端行情下频繁执行，避免“过度交易”。
+                    </p>
+                  </div>
+                </div>
+
+                {/* 执行约束 */}
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-400">
+                      最大允许滑点（跨链 + 交易）
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={userStrategy?.maxSlippagePercent ?? 1}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          const v = Math.min(
+                            100,
+                            Math.max(0, Number(e.target.value) || 0)
+                          );
+                          saveStrategy({
+                            ...userStrategy,
+                            maxSlippagePercent: v,
+                          });
+                        }}
+                        className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right font-mono text-amber-300 outline-none focus:border-amber-400"
+                      />
+                      <span className="text-slate-500">%</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-slate-400">
+                      最大允许跨链手续费占比
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={userStrategy?.maxBridgeFeePercent ?? 1}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          const v = Math.min(
+                            100,
+                            Math.max(0, Number(e.target.value) || 0)
+                          );
+                          saveStrategy({
+                            ...userStrategy,
+                            maxBridgeFeePercent: v,
+                          });
+                        }}
+                        className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right font-mono text-rose-300 outline-none focus:border-rose-400"
+                      />
+                      <span className="text-slate-500">%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-3 text-[11px]">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={userStrategy?.preferNativeBridgeOnly ?? true}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          saveStrategy({
+                            ...userStrategy,
+                            preferNativeBridgeOnly: e.target.checked,
+                          });
+                        }}
+                        className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
+                      />
+                      <span className="text-slate-300">
+                        只使用 ZetaChain 原生跨链通道
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={userStrategy?.autoExecute ?? false}
+                        onChange={(e) => {
+                          if (!userStrategy) return;
+                          saveStrategy({
+                            ...userStrategy,
+                            autoExecute: e.target.checked,
+                          });
+                        }}
+                        className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-emerald-500"
+                      />
+                      <span className="text-slate-300">
+                        允许 AI 在满足条件时自动执行跨链防御
+                      </span>
+                    </label>
+                  </div>
+                  <span className="text-[10px] text-slate-500">
+                    当前策略仅保存在本地浏览器，后续可映射到链上的 Strategy 合约供 AI/合约读取
+                  </span>
                 </div>
               </div>
             </section>
