@@ -1,7 +1,10 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WalletConnectButton } from "@/components/WalletConnectButton";
+import { useGuardianContract } from "@/hooks/useGuardianContract";
+import { GUARDIAN_CONTRACT_ADDRESS } from "@/lib/contract";
+import type { DefenseAction } from "@/hooks/useGuardianContract";
 
 type StrategyMode = "conservative" | "balanced" | "aggressive";
 
@@ -53,6 +56,84 @@ const STRATEGY_MODES: { id: StrategyMode; label: string; desc: string }[] = [
 
 export default function DashboardPage() {
   const [currentMode, setCurrentMode] = useState<StrategyMode>("balanced");
+  const {
+    account,
+    isGuardian,
+    isOwner,
+    actionsCount,
+    loading,
+    error,
+    setGuardian,
+    executeDefense,
+    getAction,
+    refresh,
+  } = useGuardianContract();
+
+  const [defenseHistory, setDefenseHistory] = useState<DefenseAction[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  // 加载防御历史记录
+  useEffect(() => {
+    if (actionsCount > 0) {
+      loadHistory();
+    }
+  }, [actionsCount]);
+
+  const loadHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const history: DefenseAction[] = [];
+      for (let i = 0; i < actionsCount; i++) {
+        const action = await getAction(i);
+        if (action) history.push(action);
+      }
+      setDefenseHistory(history.reverse()); // 最新的在前
+    } catch (err) {
+      console.error("加载历史记录失败:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleSetGuardian = async () => {
+    if (!account) return;
+    try {
+      const hash = await setGuardian(account, true);
+      setTxHash(hash);
+      await refresh();
+      alert(`成功！交易哈希: ${hash}`);
+    } catch (err: any) {
+      alert(`失败: ${err.message}`);
+    }
+  };
+
+  const handleExecuteDefense = async () => {
+    if (!account) return;
+    try {
+      const actionType = "CROSS_CHAIN_EXIT";
+      const metadata = JSON.stringify({
+        reason: "AI 检测到高风险，触发自动防御",
+        riskScore: 84,
+        timestamp: Date.now(),
+      });
+      const hash = await executeDefense(actionType, metadata);
+      setTxHash(hash);
+      await refresh();
+      await loadHistory();
+      alert(`防御动作已执行！交易哈希: ${hash}`);
+    } catch (err: any) {
+      alert(`失败: ${err.message}`);
+    }
+  };
+
+  const shortAddress = (addr: string) =>
+    addr.slice(0, 6) + "..." + addr.slice(-4);
+
+  const formatTime = (timestamp: bigint) => {
+    const date = new Date(Number(timestamp) * 1000);
+    return date.toLocaleString("zh-CN");
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -283,6 +364,134 @@ export default function DashboardPage() {
             </div>
           </div>
         </section>
+
+        {/* 合约交互卡片 */}
+        {account && (
+          <section className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                  ZetaChain Contract
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-50">
+                  链上防御执行记录
+                </p>
+              </div>
+              <a
+                href={`https://zetachain-athens-3.blockscout.com/address/${GUARDIAN_CONTRACT_ADDRESS}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-sky-400 hover:text-sky-300"
+              >
+                查看合约 →
+              </a>
+            </div>
+
+            <div className="mb-4 space-y-2 text-xs text-slate-300">
+              <div className="flex items-center justify-between">
+                <span>合约地址:</span>
+                <span className="font-mono text-slate-200">
+                  {shortAddress(GUARDIAN_CONTRACT_ADDRESS)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>当前账户:</span>
+                <span className="font-mono text-slate-200">
+                  {shortAddress(account)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Guardian 权限:</span>
+                <span
+                  className={`font-semibold ${
+                    isGuardian ? "text-emerald-300" : "text-rose-300"
+                  }`}
+                >
+                  {isGuardian ? "✅ 已授权" : "❌ 未授权"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>防御记录总数:</span>
+                <span className="font-semibold text-sky-300">
+                  {actionsCount}
+                </span>
+              </div>
+            </div>
+
+            {!isGuardian && isOwner && (
+              <button
+                onClick={handleSetGuardian}
+                disabled={loading}
+                className="mb-3 w-full rounded-full border border-sky-500/50 bg-sky-500/10 px-4 py-2 text-xs font-medium text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? "处理中..." : "授权当前账户为 Guardian"}
+              </button>
+            )}
+
+            {isGuardian && (
+              <button
+                onClick={handleExecuteDefense}
+                disabled={loading}
+                className="mb-3 w-full rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {loading ? "执行中..." : "🚀 触发防御动作（Demo）"}
+              </button>
+            )}
+
+            {error && (
+              <p className="mb-3 text-[11px] text-rose-300">{error}</p>
+            )}
+
+            {txHash && (
+              <a
+                href={`https://zetachain-athens-3.blockscout.com/tx/${txHash}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mb-3 block text-[11px] text-sky-400 hover:text-sky-300"
+              >
+                查看交易: {shortAddress(txHash)} →
+              </a>
+            )}
+
+            {/* 防御历史记录 */}
+            {actionsCount > 0 && (
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-semibold text-slate-400">
+                  最近防御记录
+                </p>
+                {loadingHistory ? (
+                  <p className="text-xs text-slate-400">加载中...</p>
+                ) : (
+                  <div className="max-h-48 space-y-2 overflow-y-auto">
+                    {defenseHistory.map((action, idx) => (
+                      <div
+                        key={idx}
+                        className="rounded-lg border border-slate-800 bg-slate-900/60 p-2 text-[11px]"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-slate-200">
+                            {action.actionType}
+                          </span>
+                          <span className="text-slate-400">
+                            {formatTime(action.timestamp)}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-slate-400">
+                          触发者: {shortAddress(action.triggeredBy)}
+                        </p>
+                        {action.metadata && (
+                          <p className="mt-1 truncate text-slate-500">
+                            {action.metadata}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </div>
   );
