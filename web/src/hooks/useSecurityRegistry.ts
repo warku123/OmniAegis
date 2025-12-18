@@ -31,10 +31,12 @@ export type ChainSecurity = {
 
 // 链 ID 到链名称的映射（前端显示用）
 export const CHAIN_NAMES: Record<number, { name: string; symbol: string }> = {
-  1: { name: "Ethereum", symbol: "ETH" },
-  7001: { name: "ZetaChain", symbol: "ZETA" },
-  137: { name: "Polygon", symbol: "MATIC" },
-  56: { name: "BNB Chain", symbol: "BNB" },
+  1: { name: "Ethereum Mainnet", symbol: "ETH" },
+  7001: { name: "ZetaChain Athens Testnet", symbol: "ZETA" },
+  11155111: { name: "Ethereum Sepolia Testnet", symbol: "ETH" },
+  137: { name: "Polygon Mainnet", symbol: "MATIC" },
+  80002: { name: "Polygon Amoy Testnet", symbol: "MATIC" },
+  97: { name: "BNB Smart Chain Testnet", symbol: "tBNB" },
   0: { name: "Bitcoin (Native)", symbol: "BTC" },
 };
 

@@ -1,8 +1,14 @@
 'use client';
 
 import { useState, useEffect } from "react";
+import { ethers } from "ethers";
 import { WalletConnectButton } from "@/components/WalletConnectButton";
 import { useGuardianContract } from "@/hooks/useGuardianContract";
+import {
+  useSecurityRegistry,
+  CHAIN_NAMES,
+  type ChainSecurity as RegistryChainSecurity,
+} from "@/hooks/useSecurityRegistry";
 import { GUARDIAN_CONTRACT_ADDRESS } from "@/lib/contract";
 import type { DefenseAction } from "@/hooks/useGuardianContract";
 
@@ -55,6 +61,46 @@ const STRATEGY_MODES: { id: StrategyMode; label: string; desc: string }[] = [
   { id: "aggressive", label: "激进", desc: "追求收益，容忍波动" },
 ];
 
+type AssetChainConfig = {
+  id: number;
+  name: string;
+  symbol: string;
+  rpcUrl: string;
+};
+
+type AssetState = {
+  balance: string | null; // 原生资产余额（格式化后的字符串）
+  loading: boolean;
+  error: string | null;
+};
+
+const ASSET_CHAINS: AssetChainConfig[] = [
+  {
+    id: 7001,
+    name: "ZetaChain Athens",
+    symbol: "ZETA",
+    rpcUrl: "https://zetachain-athens-evm.blockpi.network/v1/rpc/public",
+  },
+  {
+    id: 11155111,
+    name: "Ethereum Sepolia",
+    symbol: "ETH",
+    rpcUrl: "https://sepolia.gateway.tenderly.co", // 公共测试网 RPC，可根据需要替换
+  },
+  {
+    id: 80002,
+    name: "Polygon Amoy",
+    symbol: "MATIC",
+    rpcUrl: "https://rpc-amoy.polygon.technology",
+  },
+  {
+    id: 97,
+    name: "BNB Smart Chain Testnet",
+    symbol: "tBNB",
+    rpcUrl: "https://bsc-testnet-rpc.publicnode.com",
+  },
+];
+
 const DASHBOARD_TABS: { id: DashboardTab; label: string; desc: string }[] = [
   { id: "overview", label: "总览", desc: "全局风险与防御状态" },
   { id: "assets", label: "各链资产", desc: "按链查看资产与风险" },
@@ -65,6 +111,7 @@ const DASHBOARD_TABS: { id: DashboardTab; label: string; desc: string }[] = [
 export default function DashboardPage() {
   const [currentMode, setCurrentMode] = useState<StrategyMode>("balanced");
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
+  const [assetStates, setAssetStates] = useState<Record<number, AssetState>>({});
   const {
     account,
     isGuardian,
@@ -77,6 +124,7 @@ export default function DashboardPage() {
     getAction,
     refresh,
   } = useGuardianContract();
+  const { chainSecurities } = useSecurityRegistry();
 
   const [defenseHistory, setDefenseHistory] = useState<DefenseAction[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -143,6 +191,63 @@ export default function DashboardPage() {
     const date = new Date(Number(timestamp) * 1000);
     return date.toLocaleString("zh-CN");
   };
+
+  // 加载各测试网的原生资产余额（仅在有账户时触发）
+  useEffect(() => {
+    if (!account) return;
+
+    let cancelled = false;
+
+    const loadBalances = async () => {
+      // 先把所有链标记为 loading
+      setAssetStates((prev) => {
+        const next: Record<number, AssetState> = { ...prev };
+        for (const chain of ASSET_CHAINS) {
+          next[chain.id] = {
+            balance: prev[chain.id]?.balance ?? null,
+            loading: true,
+            error: null,
+          };
+        }
+        return next;
+      });
+
+      for (const chain of ASSET_CHAINS) {
+        try {
+          const provider = new ethers.JsonRpcProvider(chain.rpcUrl);
+          const balanceBigint = await provider.getBalance(account);
+          if (cancelled) return;
+          const formatted = ethers.formatEther(balanceBigint);
+          setAssetStates((prev) => ({
+            ...prev,
+            [chain.id]: {
+              balance: formatted,
+              loading: false,
+              error: null,
+            },
+          }));
+        } catch (err) {
+          if (cancelled) return;
+          const message =
+            err instanceof Error ? err.message : "查询余额失败，请稍后重试";
+          setAssetStates((prev) => ({
+            ...prev,
+            [chain.id]: {
+              balance: null,
+              loading: false,
+              error: message,
+            },
+          }));
+        }
+      }
+    };
+
+    void loadBalances();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [account]);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -560,7 +665,7 @@ export default function DashboardPage() {
                     各链资产与风险分布
                   </h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    按链聚合你的资产头寸，并结合安全指数评估每条链的暴露风险。
+                    按链聚合你的资产头寸，并结合安全指数（未来接入）评估每条链的暴露风险。
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
@@ -568,72 +673,139 @@ export default function DashboardPage() {
                     当前地址：{account ? shortAddress(account) : "未连接"}
                   </span>
                   <span className="rounded-full border border-slate-700 px-2.5 py-1">
-                    数据来源：演示 Mock · 后续接入 ZetaChain + AI 聚合
+                    数据来源：各测试网 RPC 原生余额 · 后续接入 DeFi 头寸与 AI 聚合
                   </span>
                 </div>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                {mockChains.map((chain) => (
-                  <div
-                    key={chain.name}
-                    className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-50">
-                          {chain.name}
-                        </p>
-                        <p className="mt-0.5 text-[11px] text-slate-400">
-                          健康度：{chain.health} · 风险评分 {chain.risk}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-mono text-sm text-slate-50">
-                          {chain.value}
-                        </p>
-                        <p className="text-[11px] text-slate-400">估算总资产</p>
-                      </div>
-                    </div>
+                {ASSET_CHAINS.map((chain) => {
+                  const registryData: RegistryChainSecurity | undefined =
+                    chainSecurities.get(chain.id);
+                  const state = assetStates[chain.id];
+                  const loadingBalance = !!state?.loading;
+                  const hasError = !!state?.error;
+                  const balance =
+                    state?.balance !== null && state?.balance !== undefined
+                      ? state.balance
+                      : account
+                      ? "--"
+                      : "-";
 
-                    <div className="space-y-2 text-[11px] text-slate-300">
+                  const numericBalance = state?.balance
+                    ? Number(state.balance)
+                    : 0;
+                  const overallScore = registryData?.score.overall ?? null;
+
+                  let health: string;
+                  let riskScore: number;
+
+                  if (overallScore !== null) {
+                    riskScore = overallScore;
+                    if (overallScore >= 80) health = "优";
+                    else if (overallScore >= 60) health = "良好";
+                    else if (overallScore >= 40) health = "一般";
+                    else health = "低";
+                  } else {
+                    if (numericBalance > 5) {
+                      health = "优";
+                      riskScore = 20;
+                    } else if (numericBalance > 1) {
+                      health = "良好";
+                      riskScore = 30;
+                    } else if (numericBalance > 0) {
+                      health = "一般";
+                      riskScore = 45;
+                    } else {
+                      health = "低";
+                      riskScore = 65;
+                    }
+                  }
+
+                  const chainMeta = CHAIN_NAMES[chain.id];
+
+                  return (
+                    <div
+                      key={chain.id}
+                      className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4"
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400">资产类型分布</span>
-                        <span className="text-slate-500">示意</span>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-50">
+                            {chainMeta?.name ?? chain.name}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {chainMeta?.symbol ? `${chainMeta.symbol} · ` : ""}
+                            健康度：{health} · 安全分{" "}
+                            {overallScore !== null
+                              ? `${overallScore} / 100`
+                              : "暂未上链"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-mono text-sm text-slate-50">
+                            {loadingBalance
+                              ? "加载中..."
+                              : hasError
+                              ? "查询失败"
+                              : balance}{" "}
+                            {account && !hasError && !loadingBalance
+                              ? chain.symbol
+                              : ""}
+                          </p>
+                          <p className="text-[11px] text-slate-400">
+                            原生资产余额（Testnet）
+                          </p>
+                        </div>
                       </div>
-                      <div className="flex h-2 overflow-hidden rounded-full bg-slate-900">
-                        <div className="h-full flex-1 bg-sky-500/80" />
-                        <div className="h-full flex-[0.6] bg-emerald-500/80" />
-                        <div className="h-full flex-[0.4] bg-amber-500/80" />
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span>现货 & LP</span>
-                        <span>借贷头寸</span>
-                        <span>其他衍生敞口</span>
-                      </div>
-                    </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-300">
-                      <div>
-                        <p className="text-slate-400">AI 风控建议（示意）</p>
-                        <p className="mt-0.5">
-                          {chain.risk > 30
-                            ? "适当降低杠杆，分散至安全得分更高的链。"
-                            : "维持当前仓位，持续监控协议与链级风险。"}
+                      <div className="space-y-2 text-[11px] text-slate-300">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400">资产类型分布</span>
+                          <span className="text-slate-500">示意</span>
+                        </div>
+                        <div className="flex h-2 overflow-hidden rounded-full bg-slate-900">
+                          <div className="h-full flex-1 bg-sky-500/80" />
+                          <div className="h-full flex-[0.6] bg-emerald-500/80" />
+                          <div className="h-full flex-[0.4] bg-amber-500/80" />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-400">
+                          <span>现货 & LP</span>
+                          <span>借贷头寸</span>
+                          <span>其他衍生敞口</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-300">
+                        <div>
+                          <p className="text-slate-400">AI 风控建议（示意）</p>
+                          <p className="mt-0.5">
+                            {overallScore !== null
+                              ? overallScore >= 70
+                                ? "该链安全分较高，可作为主要防御落地点或资产承载链。"
+                                : "该链安全分一般，建议只保留必要仓位，更多作为中转链使用。"
+                              : "该链安全分暂未写入 SecurityRegistry，目前仅基于余额做简单评估。"}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                        <button className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-sky-400 hover:text-sky-200">
+                          查看安全详情
+                        </button>
+                        <button className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-emerald-400 hover:text-emerald-200">
+                          仅对该链执行防御（Demo）
+                        </button>
+                      </div>
+
+                      {hasError && (
+                        <p className="pt-1 text-[10px] text-rose-400">
+                          查询失败：{assetStates[chain.id]?.error}
                         </p>
-                      </div>
+                      )}
                     </div>
-
-                    <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
-                      <button className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-sky-400 hover:text-sky-200">
-                        查看安全详情
-                      </button>
-                      <button className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-emerald-400 hover:text-emerald-200">
-                        仅对该链执行防御（Demo）
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}

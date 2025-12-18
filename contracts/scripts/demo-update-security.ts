@@ -29,21 +29,28 @@ async function main() {
     return;
   }
 
-  // 模拟 AI 生成的安全数据
-  const chainIds = [1, 7001, 137, 56, 0]; // Ethereum, ZetaChain, Polygon, BNB, Bitcoin
+  // 模拟 AI 生成的安全数据（仅为当前前端展示的几条测试链写入：
+  // ZetaChain Athens Testnet, Ethereum Sepolia, Polygon Amoy, BNB Testnet）
+  const chainIds = [7001, 11155111, 80002, 97];
   const scores = [
-    { overall: 79, protocol: 32, chain: 15, market: 45, social: 20, gas: 65 },
+    // ZetaChain Athens Testnet
     { overall: 85, protocol: 25, chain: 18, market: 40, social: 15, gas: 80 },
-    { overall: 72, protocol: 38, chain: 22, market: 50, social: 25, gas: 70 },
-    { overall: 68, protocol: 42, chain: 28, market: 55, social: 30, gas: 60 },
-    { overall: 92, protocol: 10, chain: 8, market: 35, social: 12, gas: 95 },
+    // Ethereum Sepolia
+    { overall: 78, protocol: 32, chain: 20, market: 48, social: 22, gas: 70 },
+    // Polygon Amoy
+    { overall: 72, protocol: 38, chain: 22, market: 50, social: 25, gas: 75 },
+    // BNB Smart Chain Testnet
+    { overall: 68, protocol: 42, chain: 28, market: 55, social: 30, gas: 65 },
   ];
   const details = [
-    { protocolCount: 12, totalValueLocked: 2400, activeDefenses: 3 },
+    // ZetaChain Athens Testnet
     { protocolCount: 8, totalValueLocked: 180, activeDefenses: 2 },
-    { protocolCount: 15, totalValueLocked: 890, activeDefenses: 4 },
-    { protocolCount: 18, totalValueLocked: 1200, activeDefenses: 5 },
-    { protocolCount: 3, totalValueLocked: 5800, activeDefenses: 1 },
+    // Ethereum Sepolia
+    { protocolCount: 10, totalValueLocked: 320, activeDefenses: 3 },
+    // Polygon Amoy
+    { protocolCount: 12, totalValueLocked: 260, activeDefenses: 3 },
+    // BNB Smart Chain Testnet
+    { protocolCount: 9, totalValueLocked: 210, activeDefenses: 2 },
   ];
 
   console.log("\n正在批量更新安全数据...");

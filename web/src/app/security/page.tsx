@@ -94,7 +94,7 @@ export default function SecurityPage() {
           <div className="flex items-center gap-2">
             <WalletConnectButton variant="compact" showError={false} />
             <span className="text-xs text-slate-400">
-              数据来源：链上合约 SecurityRegistry + AI 分析
+              数据来源：链上合约 SecurityRegistry + 链下 AI Agent 分析 (待实现)
             </span>
           </div>
         </div>

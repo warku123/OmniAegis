@@ -101,6 +101,31 @@ contract SecurityRegistry {
         emit ChainRegistered(chainId, chainName);
     }
 
+    /// @notice 移除一条链的安全数据（仅 owner，可用于下线错误或不再支持的链）
+    /// @dev 从 mapping 中删除安全数据，并从 supportedChainIds 数组中移除对应的链 ID。
+    function removeChain(uint256 chainId) external onlyOwner {
+        require(isChainRegistered[chainId], "Chain not registered");
+
+        // 1. 取消注册标记
+        isChainRegistered[chainId] = false;
+
+        // 2. 删除安全数据
+        delete chainSecurities[chainId];
+
+        // 3. 从 supportedChainIds 中移除（swap & pop）
+        uint256 length = supportedChainIds.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (supportedChainIds[i] == chainId) {
+                // 用最后一个元素覆盖当前下标
+                if (i != length - 1) {
+                    supportedChainIds[i] = supportedChainIds[length - 1];
+                }
+                supportedChainIds.pop();
+                break;
+            }
+        }
+    }
+
     /// @notice 更新单条链的安全数据（AI Agent 调用）
     function updateChainSecurity(
         uint256 chainId,
