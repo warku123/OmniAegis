@@ -551,20 +551,315 @@ export default function DashboardPage() {
             </>
           )}
 
-          {/* 其他 Tab 先占位，后续逐步实现 */}
+          {/* 各链资产 Tab */}
           {activeTab === "assets" && (
-            <section className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-xs text-slate-400 sm:text-sm">
-              <p>「各链资产情况」视图建设中，稍后我们在这里接入按链分布的资产 + 安全指数。</p>
+            <section className="space-y-5">
+              <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-50">
+                    各链资产与风险分布
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    按链聚合你的资产头寸，并结合安全指数评估每条链的暴露风险。
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                  <span className="rounded-full border border-slate-700 px-2.5 py-1">
+                    当前地址：{account ? shortAddress(account) : "未连接"}
+                  </span>
+                  <span className="rounded-full border border-slate-700 px-2.5 py-1">
+                    数据来源：演示 Mock · 后续接入 ZetaChain + AI 聚合
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                {mockChains.map((chain) => (
+                  <div
+                    key={chain.name}
+                    className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-50">
+                          {chain.name}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">
+                          健康度：{chain.health} · 风险评分 {chain.risk}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-sm text-slate-50">
+                          {chain.value}
+                        </p>
+                        <p className="text-[11px] text-slate-400">估算总资产</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 text-[11px] text-slate-300">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">资产类型分布</span>
+                        <span className="text-slate-500">示意</span>
+                      </div>
+                      <div className="flex h-2 overflow-hidden rounded-full bg-slate-900">
+                        <div className="h-full flex-1 bg-sky-500/80" />
+                        <div className="h-full flex-[0.6] bg-emerald-500/80" />
+                        <div className="h-full flex-[0.4] bg-amber-500/80" />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span>现货 & LP</span>
+                        <span>借贷头寸</span>
+                        <span>其他衍生敞口</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-300">
+                      <div>
+                        <p className="text-slate-400">AI 风控建议（示意）</p>
+                        <p className="mt-0.5">
+                          {chain.risk > 30
+                            ? "适当降低杠杆，分散至安全得分更高的链。"
+                            : "维持当前仓位，持续监控协议与链级风险。"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                      <button className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-sky-400 hover:text-sky-200">
+                        查看安全详情
+                      </button>
+                      <button className="rounded-full border border-slate-700 px-3 py-1 text-slate-200 transition hover:border-emerald-400 hover:text-emerald-200">
+                        仅对该链执行防御（Demo）
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </section>
           )}
+
+          {/* 策略配置 Tab */}
           {activeTab === "strategy" && (
-            <section className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-xs text-slate-400 sm:text-sm">
-              <p>「策略配置」中心建设中，稍后可以在这里配置风险阈值与逃生偏好。</p>
+            <section className="space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold text-slate-50">
+                  策略配置中心
+                </h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  设置 AI 风控的触发阈值与优先执行的防御动作，当前为前端本地示意配置。
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Risk Appetite
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {STRATEGY_MODES.map((mode) => {
+                      const active = currentMode === mode.id;
+                      return (
+                        <button
+                          key={mode.id}
+                          onClick={() => setCurrentMode(mode.id)}
+                          className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm ${
+                            active
+                              ? "border-sky-400 bg-sky-500/20 text-sky-100"
+                              : "border-slate-700 text-slate-200 hover:border-slate-400"
+                          }`}
+                        >
+                          {mode.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    不同风险偏好会影响 AI 对「是否立即触发逃生」的判断阈值（示意逻辑，后续可由后端/合约持久化策略）。
+                  </p>
+                </div>
+
+                <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    触发阈值（示意）
+                  </p>
+                  <div className="space-y-2 text-[11px] text-slate-300">
+                    <div className="flex items-center justify-between">
+                      <span>总体安全分低于</span>
+                      <span className="font-mono text-amber-300">60</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-900">
+                      <div className="h-full w-3/5 bg-amber-500" />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>任一链协议风险高于</span>
+                      <span className="font-mono text-rose-300">75</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-900">
+                      <div className="h-full w-3/4 bg-rose-500" />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>市场波动超过近 30 天均值的</span>
+                      <span className="font-mono text-sky-300">1.5x</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-900">
+                      <div className="h-full w-2/3 bg-sky-500" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-[11px] text-slate-300 sm:text-xs">
+                <p className="text-xs font-semibold text-slate-200">
+                  逃生策略偏好（示意）
+                </p>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="flex items-start gap-2 rounded-2xl bg-slate-900/70 p-3">
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-100">
+                        优先跨链转移到高安全分链
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        当链级/协议风险过高时，将核心资产迁移至高分链（如 ZetaChain
+                        + Ethereum）。
+                      </p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-2 rounded-2xl bg-slate-900/70 p-3">
+                    <input
+                      type="checkbox"
+                      defaultChecked
+                      className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-100">
+                        优先减杠杆并回收至稳定币
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        清理高风险借贷头寸，逐步回收至 USDC/USDT 等稳定币。
+                      </p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-2 rounded-2xl bg-slate-900/70 p-3">
+                    <input
+                      type="checkbox"
+                      className="mt-1 h-3.5 w-3.5 rounded border-slate-600 bg-slate-900 text-sky-500"
+                    />
+                    <div>
+                      <p className="font-medium text-slate-100">
+                        自动补齐跨链保险覆盖
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        检测到保障缺口时，调用跨链保险协议补齐（规划中，后续可对接真实协议）。
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              </div>
             </section>
           )}
+
+          {/* 安全事件 / 演练 Tab */}
           {activeTab === "incidents" && (
-            <section className="rounded-3xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-xs text-slate-400 sm:text-sm">
-              <p>「安全事件 / 演练」时间线建设中，可用于展示安全指数变动与防御触发历史。</p>
+            <section className="space-y-5">
+              <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-50">
+                    安全事件与防御演练时间线
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    汇总 AI 告警与链上防御执行记录，帮助你回放整个「发现 → 决策 → 执行」过程。
+                  </p>
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  {account
+                    ? "已连接钱包，可读取真实防御历史记录 + 示例告警。"
+                    : "未连接钱包时仅展示示例告警，可连接钱包查看真实防御记录。"}
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+                <p className="text-xs font-semibold text-slate-200">
+                  事件时间线（示意）
+                </p>
+                <div className="space-y-3 text-[11px] text-slate-300 sm:text-xs">
+                  {mockAlerts.map((alert, idx) => (
+                    <div key={`alert-${idx}`} className="flex gap-3">
+                      <div className="flex flex-col items-center">
+                        <div className="h-2 w-2 rounded-full bg-amber-400" />
+                        <div className="h-full w-px bg-slate-700" />
+                      </div>
+                      <div className="flex-1 rounded-2xl bg-slate-900/80 p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500">
+                            AI 告警（示例）
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              alert.level === "高"
+                                ? "bg-rose-500/20 text-rose-200"
+                                : "bg-amber-500/20 text-amber-200"
+                            }`}
+                          >
+                            {alert.level} 优先级
+                          </span>
+                        </div>
+                        <p className="mt-1 font-medium text-slate-100">
+                          {alert.title}
+                        </p>
+                        <p className="mt-1 text-slate-300">{alert.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {account && actionsCount > 0 && (
+                    <div className="pt-2">
+                      {defenseHistory.map((action, idx) => (
+                        <div key={`defense-${idx}`} className="flex gap-3">
+                          <div className="flex flex-col items-center">
+                            <div className="h-2 w-2 rounded-full bg-sky-400" />
+                            {idx < defenseHistory.length - 1 && (
+                              <div className="h-full w-px bg-slate-700" />
+                            )}
+                          </div>
+                          <div className="flex-1 rounded-2xl bg-slate-900/80 p-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] text-slate-500">
+                                链上防御执行
+                              </span>
+                              <span className="text-[11px] text-slate-400">
+                                {formatTime(action.timestamp)}
+                              </span>
+                            </div>
+                            <p className="mt-1 font-medium text-slate-100">
+                              {action.actionType}
+                            </p>
+                            <p className="mt-1 text-slate-400">
+                              触发者: {shortAddress(action.triggeredBy)}
+                            </p>
+                            {action.metadata && (
+                              <p className="mt-1 truncate text-slate-500">
+                                {action.metadata}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {account && actionsCount === 0 && (
+                    <p className="pt-2 text-[11px] text-slate-500">
+                      当前地址还没有任何防御执行记录，可以在「总览」中点击
+                      「触发防御动作（Demo）」来生成一条演练记录。
+                    </p>
+                  )}
+                </div>
+              </div>
             </section>
           )}
         </div>
