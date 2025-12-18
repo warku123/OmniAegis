@@ -1,132 +1,15 @@
 'use client';
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { WalletConnectButton } from "@/components/WalletConnectButton";
-
-type SecurityScore = {
-  overall: number; // 总体安全指数 (0-100)
-  protocol: number; // 协议风险 (0-100, 越低越安全)
-  chain: number; // 链级风险 (0-100, 越低越安全)
-  market: number; // 市场波动风险 (0-100, 越低越安全)
-  social: number; // 社交信号风险 (0-100, 越低越安全)
-  gas: number; // Gas 稳定性 (0-100, 越高越稳定)
-};
-
-type ChainSecurity = {
-  chainId: number;
-  chainName: string;
-  chainSymbol: string;
-  icon?: string;
-  score: SecurityScore;
-  lastUpdated: number; // timestamp
-  details: {
-    protocolCount: number; // 监控的协议数量
-    totalValueLocked: string; // TVL
-    activeDefenses: number; // 当前活跃的防御策略数量
-  };
-};
-
-// Mock 数据 - 后续会从合约读取
-const mockChains: ChainSecurity[] = [
-  {
-    chainId: 1,
-    chainName: "Ethereum",
-    chainSymbol: "ETH",
-    score: {
-      overall: 78,
-      protocol: 32,
-      chain: 15,
-      market: 45,
-      social: 20,
-      gas: 65,
-    },
-    lastUpdated: Date.now() - 5 * 60 * 1000, // 5分钟前
-    details: {
-      protocolCount: 12,
-      totalValueLocked: "$2.4B",
-      activeDefenses: 3,
-    },
-  },
-  {
-    chainId: 7001,
-    chainName: "ZetaChain",
-    chainSymbol: "ZETA",
-    score: {
-      overall: 85,
-      protocol: 25,
-      chain: 18,
-      market: 40,
-      social: 15,
-      gas: 80,
-    },
-    lastUpdated: Date.now() - 2 * 60 * 1000, // 2分钟前
-    details: {
-      protocolCount: 8,
-      totalValueLocked: "$180M",
-      activeDefenses: 2,
-    },
-  },
-  {
-    chainId: 137,
-    chainName: "Polygon",
-    chainSymbol: "MATIC",
-    score: {
-      overall: 72,
-      protocol: 38,
-      chain: 22,
-      market: 50,
-      social: 25,
-      gas: 70,
-    },
-    lastUpdated: Date.now() - 8 * 60 * 1000, // 8分钟前
-    details: {
-      protocolCount: 15,
-      totalValueLocked: "$890M",
-      activeDefenses: 4,
-    },
-  },
-  {
-    chainId: 56,
-    chainName: "BNB Chain",
-    chainSymbol: "BNB",
-    score: {
-      overall: 68,
-      protocol: 42,
-      chain: 28,
-      market: 55,
-      social: 30,
-      gas: 60,
-    },
-    lastUpdated: Date.now() - 12 * 60 * 1000, // 12分钟前
-    details: {
-      protocolCount: 18,
-      totalValueLocked: "$1.2B",
-      activeDefenses: 5,
-    },
-  },
-  {
-    chainId: 0, // Bitcoin 特殊标记
-    chainName: "Bitcoin (Native)",
-    chainSymbol: "BTC",
-    score: {
-      overall: 92,
-      protocol: 10,
-      chain: 8,
-      market: 35,
-      social: 12,
-      gas: 95,
-    },
-    lastUpdated: Date.now() - 1 * 60 * 1000, // 1分钟前
-    details: {
-      protocolCount: 3,
-      totalValueLocked: "$5.8B",
-      activeDefenses: 1,
-    },
-  },
-];
+import {
+  useSecurityRegistry,
+  CHAIN_NAMES,
+  type ChainSecurity as RegistryChainSecurity,
+} from "@/hooks/useSecurityRegistry";
 
 const getScoreColor = (score: number, isReverse = false) => {
-  // isReverse: true 表示分数越低越好（风险），false 表示分数越高越好（安全）
+  // isReverse: true => 分数越低越好（风险），false => 分数越高越好（安全）
   const effectiveScore = isReverse ? 100 - score : score;
   if (effectiveScore >= 80) return "text-emerald-300";
   if (effectiveScore >= 60) return "text-amber-300";
@@ -142,8 +25,9 @@ const getScoreBgColor = (score: number, isReverse = false) => {
   return "bg-rose-500/20 border-rose-500/50";
 };
 
-const formatTimeAgo = (timestamp: number) => {
-  const diff = Date.now() - timestamp;
+const formatTimeAgo = (timestamp: number | bigint) => {
+  const ts = typeof timestamp === "bigint" ? Number(timestamp) * 1000 : timestamp;
+  const diff = Date.now() - ts;
   const minutes = Math.floor(diff / 60000);
   if (minutes < 1) return "刚刚";
   if (minutes < 60) return `${minutes} 分钟前`;
@@ -153,9 +37,47 @@ const formatTimeAgo = (timestamp: number) => {
 };
 
 export default function SecurityPage() {
-  const [selectedChain, setSelectedChain] = useState<ChainSecurity | null>(
-    null
-  );
+  const {
+    loading,
+    error,
+    supportedChainIds,
+    chainSecurities,
+    refresh,
+  } = useSecurityRegistry();
+
+  const [selectedChainId, setSelectedChainId] = useState<number | null>(null);
+
+  // 从合约 Map + CHAIN_NAMES 组装出前端要用的数据结构
+  const chainsFromRegistry = useMemo(() => {
+    const result: {
+      chainId: number;
+      name: string;
+      symbol: string;
+      data: RegistryChainSecurity;
+    }[] = [];
+
+    for (const chainId of supportedChainIds) {
+      const data = chainSecurities.get(chainId);
+      if (!data) continue;
+      const meta = CHAIN_NAMES[chainId] ?? {
+        name: `Chain ${chainId}`,
+        symbol: String(chainId),
+      };
+      result.push({
+        chainId,
+        name: meta.name,
+        symbol: meta.symbol,
+        data,
+      });
+    }
+
+    return result;
+  }, [supportedChainIds, chainSecurities]);
+
+  const selectedChain =
+    selectedChainId !== null
+      ? chainsFromRegistry.find((c) => c.chainId === selectedChainId) ?? null
+      : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-50">
@@ -172,82 +94,115 @@ export default function SecurityPage() {
           <div className="flex items-center gap-2">
             <WalletConnectButton variant="compact" showError={false} />
             <span className="text-xs text-slate-400">
-              数据来源：链上监控 + AI 分析（Mock 数据，后续对接合约）
+              数据来源：链上合约 SecurityRegistry + AI 分析
             </span>
           </div>
         </div>
 
-        {/* 链列表概览 */}
-        <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {mockChains.map((chain) => (
-            <div
-              key={chain.chainId}
-              onClick={() => setSelectedChain(chain)}
-              className={`cursor-pointer rounded-2xl border p-4 transition-all ${
-                selectedChain?.chainId === chain.chainId
-                  ? "border-sky-400 bg-slate-900/80 ring-2 ring-sky-500/30"
-                  : "border-slate-800 bg-slate-950/70 hover:border-slate-700"
-              }`}
+        {/* 状态提示 */}
+        {loading && (
+          <p className="text-xs text-slate-400">
+            正在从 ZetaChain 读取安全数据...
+          </p>
+        )}
+        {error && (
+          <p className="text-xs text-rose-400">
+            加载失败：{error}（请确认 SecurityRegistry 已写入数据）
+          </p>
+        )}
+        {!loading && !error && chainsFromRegistry.length === 0 && (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4 text-xs text-slate-400">
+            <p>当前合约中还没有任何链的安全数据。</p>
+            <p className="mt-1">
+              请先在后端/AI 脚本中调用
+              <span className="font-mono"> batchUpdateChainSecurity </span>
+              写入数据，然后点击下方按钮刷新。
+            </p>
+            <button
+              onClick={refresh}
+              className="mt-3 rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-200 transition hover:border-slate-500"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-50">
-                    {chain.chainName}
-                  </h3>
-                  <p className="text-xs text-slate-400">{chain.chainSymbol}</p>
-                </div>
+              刷新数据
+            </button>
+          </div>
+        )}
+
+        {/* 链列表概览 */}
+        {chainsFromRegistry.length > 0 && (
+          <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {chainsFromRegistry.map((item) => {
+              const { chainId, name, symbol, data } = item;
+              return (
                 <div
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${getScoreBgColor(
-                    chain.score.overall
-                  )} ${getScoreColor(chain.score.overall)}`}
+                  key={chainId}
+                  onClick={() => setSelectedChainId(chainId)}
+                  className={`cursor-pointer rounded-2xl border p-4 transition-all ${
+                    selectedChainId === chainId
+                      ? "border-sky-400 bg-slate-900/80 ring-2 ring-sky-500/30"
+                      : "border-slate-800 bg-slate-950/70 hover:border-slate-700"
+                  }`}
                 >
-                  {chain.score.overall}
-                </div>
-              </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-50">
+                        {name}
+                      </h3>
+                      <p className="text-xs text-slate-400">{symbol}</p>
+                    </div>
+                    <div
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold ${getScoreBgColor(
+                        data.score.overall
+                      )} ${getScoreColor(data.score.overall)}`}
+                    >
+                      {data.score.overall}
+                    </div>
+                  </div>
 
-              <div className="mt-3 space-y-1.5 text-[11px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">协议风险</span>
-                  <span
-                    className={`font-medium ${getScoreColor(
-                      chain.score.protocol,
-                      true
-                    )}`}
-                  >
-                    {chain.score.protocol}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">链级风险</span>
-                  <span
-                    className={`font-medium ${getScoreColor(
-                      chain.score.chain,
-                      true
-                    )}`}
-                  >
-                    {chain.score.chain}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">市场波动</span>
-                  <span
-                    className={`font-medium ${getScoreColor(
-                      chain.score.market,
-                      true
-                    )}`}
-                  >
-                    {chain.score.market}
-                  </span>
-                </div>
-              </div>
+                  <div className="mt-3 space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">协议风险</span>
+                      <span
+                        className={`font-medium ${getScoreColor(
+                          data.score.protocol,
+                          true
+                        )}`}
+                      >
+                        {data.score.protocol}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">链级风险</span>
+                      <span
+                        className={`font-medium ${getScoreColor(
+                          data.score.chain,
+                          true
+                        )}`}
+                      >
+                        {data.score.chain}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">市场波动</span>
+                      <span
+                        className={`font-medium ${getScoreColor(
+                          data.score.market,
+                          true
+                        )}`}
+                      >
+                        {data.score.market}
+                      </span>
+                    </div>
+                  </div>
 
-              <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
-                <span>更新于 {formatTimeAgo(chain.lastUpdated)}</span>
-                <span>{chain.details.activeDefenses} 个防御策略</span>
-              </div>
-            </div>
-          ))}
-        </section>
+                  <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
+                    <span>更新于 {formatTimeAgo(data.lastUpdated)}</span>
+                    <span>{data.details.activeDefenses} 个防御策略</span>
+                  </div>
+                </div>
+              );
+            })}
+          </section>
+        )}
 
         {/* 选中链的详细安全指数 */}
         {selectedChain && (
@@ -255,14 +210,14 @@ export default function SecurityPage() {
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-slate-50">
-                  {selectedChain.chainName} 安全指数详情
+                  {selectedChain.name} 安全指数详情
                 </h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  最后更新：{formatTimeAgo(selectedChain.lastUpdated)}
+                  最后更新：{formatTimeAgo(selectedChain.data.lastUpdated)}
                 </p>
               </div>
               <button
-                onClick={() => setSelectedChain(null)}
+                onClick={() => setSelectedChainId(null)}
                 className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-slate-600"
               >
                 关闭详情
@@ -281,10 +236,10 @@ export default function SecurityPage() {
                 <div className="text-right">
                   <div
                     className={`text-4xl font-bold ${getScoreColor(
-                      selectedChain.score.overall
+                      selectedChain.data.score.overall
                     )}`}
                   >
-                    {selectedChain.score.overall}
+                    {selectedChain.data.score.overall}
                   </div>
                   <p className="text-xs text-slate-400">/ 100</p>
                 </div>
@@ -292,15 +247,15 @@ export default function SecurityPage() {
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-800">
                 <div
                   className={`h-full transition-all ${
-                    selectedChain.score.overall >= 80
+                    selectedChain.data.score.overall >= 80
                       ? "bg-emerald-500"
-                      : selectedChain.score.overall >= 60
+                      : selectedChain.data.score.overall >= 60
                       ? "bg-amber-500"
-                      : selectedChain.score.overall >= 40
+                      : selectedChain.data.score.overall >= 40
                       ? "bg-orange-500"
                       : "bg-rose-500"
                   }`}
-                  style={{ width: `${selectedChain.score.overall}%` }}
+                  style={{ width: `${selectedChain.data.score.overall}%` }}
                 />
               </div>
             </div>
@@ -315,21 +270,21 @@ export default function SecurityPage() {
                   </p>
                   <span
                     className={`text-lg font-bold ${getScoreColor(
-                      selectedChain.score.protocol,
+                      selectedChain.data.score.protocol,
                       true
                     )}`}
                   >
-                    {selectedChain.score.protocol}
+                    {selectedChain.data.score.protocol}
                   </span>
                 </div>
                 <p className="mb-3 text-[11px] text-slate-400">
-                  监控 {selectedChain.details.protocolCount} 个协议的健康度
+                  监控 {selectedChain.data.details.protocolCount} 个协议的健康度
                 </p>
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
                   <div
                     className="h-full bg-rose-500"
                     style={{
-                      width: `${selectedChain.score.protocol}%`,
+                      width: `${selectedChain.data.score.protocol}%`,
                     }}
                   />
                 </div>
@@ -343,11 +298,11 @@ export default function SecurityPage() {
                   </p>
                   <span
                     className={`text-lg font-bold ${getScoreColor(
-                      selectedChain.score.chain,
+                      selectedChain.data.score.chain,
                       true
                     )}`}
                   >
-                    {selectedChain.score.chain}
+                    {selectedChain.data.score.chain}
                   </span>
                 </div>
                 <p className="mb-3 text-[11px] text-slate-400">
@@ -357,7 +312,7 @@ export default function SecurityPage() {
                   <div
                     className="h-full bg-orange-500"
                     style={{
-                      width: `${selectedChain.score.chain}%`,
+                      width: `${selectedChain.data.score.chain}%`,
                     }}
                   />
                 </div>
@@ -371,11 +326,11 @@ export default function SecurityPage() {
                   </p>
                   <span
                     className={`text-lg font-bold ${getScoreColor(
-                      selectedChain.score.market,
+                      selectedChain.data.score.market,
                       true
                     )}`}
                   >
-                    {selectedChain.score.market}
+                    {selectedChain.data.score.market}
                   </span>
                 </div>
                 <p className="mb-3 text-[11px] text-slate-400">
@@ -385,7 +340,7 @@ export default function SecurityPage() {
                   <div
                     className="h-full bg-amber-500"
                     style={{
-                      width: `${selectedChain.score.market}%`,
+                      width: `${selectedChain.data.score.market}%`,
                     }}
                   />
                 </div>
@@ -399,11 +354,11 @@ export default function SecurityPage() {
                   </p>
                   <span
                     className={`text-lg font-bold ${getScoreColor(
-                      selectedChain.score.social,
+                      selectedChain.data.score.social,
                       true
                     )}`}
                   >
-                    {selectedChain.score.social}
+                    {selectedChain.data.score.social}
                   </span>
                 </div>
                 <p className="mb-3 text-[11px] text-slate-400">
@@ -413,7 +368,7 @@ export default function SecurityPage() {
                   <div
                     className="h-full bg-rose-400"
                     style={{
-                      width: `${selectedChain.score.social}%`,
+                      width: `${selectedChain.data.score.social}%`,
                     }}
                   />
                 </div>
@@ -427,10 +382,10 @@ export default function SecurityPage() {
                   </p>
                   <span
                     className={`text-lg font-bold ${getScoreColor(
-                      selectedChain.score.gas
+                      selectedChain.data.score.gas
                     )}`}
                   >
-                    {selectedChain.score.gas}
+                    {selectedChain.data.score.gas}
                   </span>
                 </div>
                 <p className="mb-3 text-[11px] text-slate-400">
@@ -440,7 +395,7 @@ export default function SecurityPage() {
                   <div
                     className="h-full bg-emerald-500"
                     style={{
-                      width: `${selectedChain.score.gas}%`,
+                      width: `${selectedChain.data.score.gas}%`,
                     }}
                   />
                 </div>
@@ -455,19 +410,19 @@ export default function SecurityPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">监控协议数</span>
                     <span className="font-medium text-slate-200">
-                      {selectedChain.details.protocolCount}
+                      {selectedChain.data.details.protocolCount}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">总锁定价值 (TVL)</span>
                     <span className="font-medium text-slate-200">
-                      {selectedChain.details.totalValueLocked}
+                      {selectedChain.data.details.totalValueLocked}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400">活跃防御策略</span>
                     <span className="font-medium text-emerald-300">
-                      {selectedChain.details.activeDefenses}
+                      {selectedChain.data.details.activeDefenses}
                     </span>
                   </div>
                 </div>
@@ -480,7 +435,8 @@ export default function SecurityPage() {
         {!selectedChain && (
           <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-center text-xs text-slate-400">
             <p>
-              点击上方任意链卡片查看详细安全指数。数据将存储在链上合约中，支持实时更新和历史查询。
+              点击上方任意链卡片查看详细安全指数。所有数据均来自 ZetaChain 上的
+              SecurityRegistry 合约，并可由 AI Agent 定期更新。
             </p>
           </div>
         )}
@@ -488,4 +444,3 @@ export default function SecurityPage() {
     </div>
   );
 }
-

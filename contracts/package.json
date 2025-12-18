@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "compile": "hardhat compile",
-    "deploy:zetachain": "hardhat run scripts/deploy-guardian.ts --network zetachainTestnet"
+    "deploy:zetachain": "hardhat run scripts/deploy-guardian.ts --network zetachainTestnet",
+    "deploy:security": "hardhat run scripts/deploy-security-registry.ts --network zetachainTestnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
