@@ -6,6 +6,7 @@
     "compile": "hardhat compile",
     "deploy:zetachain": "hardhat run scripts/deploy-guardian.ts --network zetachainTestnet",
     "deploy:security": "hardhat run scripts/deploy-security-registry.ts --network zetachainTestnet",
+    "deploy:strategy": "hardhat run scripts/deploy-strategy-registry.ts --network zetachainTestnet",
     "demo:update-security": "hardhat run scripts/demo-update-security.ts --network zetachainTestnet",
     "cleanup:legacy-chains": "hardhat run scripts/cleanup-legacy-chains.ts --network zetachainTestnet"
   },
