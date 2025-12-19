@@ -19,44 +19,43 @@ import type { DefenseAction } from "@/hooks/useGuardianContract";
 type StrategyMode = "conservative" | "balanced" | "aggressive";
 type DashboardTab = "overview" | "assets" | "strategy" | "incidents";
 
-const mockChains = [
-  {
-    name: "Ethereum",
-    value: "$52,430",
-    health: "良好",
-    risk: 32,
-  },
-  {
-    name: "ZetaChain",
-    value: "$18,920",
-    health: "优",
-    risk: 21,
-  },
-  {
-    name: "Bitcoin (Native)",
-    value: "$73,580",
-    health: "良好",
-    risk: 28,
-  },
-];
+// 根据分数生成风险等级标签
+const getRiskLevel = (score: number): string => {
+  if (score >= 80) return "优秀";
+  if (score >= 60) return "良好";
+  if (score >= 40) return "中等";
+  if (score >= 20) return "较差";
+  return "极差";
+};
 
-const mockAlerts = [
-  {
-    title: "借贷仓位健康度下降",
-    desc: "某链借贷仓位健康因子在 30 分钟内从 1.6 降至 1.25 · 建议降低杠杆并跨链再平衡。",
-    level: "高",
-  },
-  {
-    title: "协议利用率异常升高",
-    desc: "某借贷协议利用率 > 90% 且资金集中度过高 · 建议分散至其他协议。",
-    level: "中",
-  },
-];
-
-const mockGlobalRisk = {
-  score: 54,
-  label: "中等 · 可防御",
-  comment: "当前组合风险可控，已启用自动防御策略。如市场波动加剧，将自动触发跨链“逃生”计划。",
+// 根据安全分数生成风险标签和评论
+const getRiskLabelAndComment = (score: number): { label: string; comment: string } => {
+  if (score >= 80) {
+    return {
+      label: "优秀 · 安全",
+      comment: "ZetaChain 安全态势优秀，当前风险极低。系统正常运行，无需额外防御措施。",
+    };
+  } else if (score >= 60) {
+    return {
+      label: "良好 · 可防御",
+      comment: "ZetaChain 安全态势良好，风险可控。已启用自动防御策略，如市场波动加剧，将自动触发跨链\"逃生\"计划。",
+    };
+  } else if (score >= 40) {
+    return {
+      label: "中等 · 需关注",
+      comment: "ZetaChain 安全态势中等，存在一定风险。建议密切关注链上活动，必要时手动触发防御策略。",
+    };
+  } else if (score >= 20) {
+    return {
+      label: "较差 · 高风险",
+      comment: "ZetaChain 安全态势较差，风险较高。建议立即检查链上活动，考虑将资产转移至更安全的链。",
+    };
+  } else {
+    return {
+      label: "极差 · 极高风险",
+      comment: "ZetaChain 安全态势极差，存在极高风险。强烈建议立即执行防御策略，将资产转移至安全链。",
+    };
+  }
 };
 
 const STRATEGY_MODES: { id: StrategyMode; label: string; desc: string }[] = [
@@ -139,6 +138,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [assetStates, setAssetStates] = useState<Record<number, AssetState>>({});
   const [userStrategy, setUserStrategy] = useState<UserStrategy | null>(null);
+  const [onchainRiskMode, setOnchainRiskMode] = useState<StrategyMode | null>(null); // 链上的风险偏好，不随本地变化
   const [activeThresholdChainId, setActiveThresholdChainId] =
     useState<number>(7001); // 默认在 ZetaChain 上配置
   const [syncingGlobalConfig, setSyncingGlobalConfig] = useState(false);
@@ -277,13 +277,20 @@ export default function DashboardPage() {
             );
             const cfg = await contract.getGlobalConfig(account);
             if (cfg.exists) {
-              base.mode =
-                cfg.riskMode === 0
+              // riskMode 可能是 bigint，需要转换为 number
+              const riskModeValue = Number(cfg.riskMode);
+              const riskMode =
+                riskModeValue === 0
                   ? "conservative"
-                  : cfg.riskMode === 2
+                  : riskModeValue === 2
                   ? "aggressive"
                   : "balanced";
+              base.mode = riskMode;
+              setOnchainRiskMode(riskMode); // 更新链上的风险偏好
               base.autoExecute = cfg.autoExecute;
+            } else {
+              // 如果没有链上数据，onchainRiskMode 设置为 null
+              setOnchainRiskMode(null);
               base.protectStablecoins = cfg.protectStablecoins;
               base.protectBlueChips = cfg.protectBlueChips;
               base.overallThreshold = Number(cfg.defaultOverallThreshold);
@@ -323,6 +330,7 @@ export default function DashboardPage() {
       } catch (e) {
         console.error("从链上加载策略失败:", e);
         setUserStrategy(null);
+        setOnchainRiskMode(null);
       } finally {
         loadingStrategyRef.current = false;
       }
@@ -455,9 +463,11 @@ export default function DashboardPage() {
               <span className="rounded-full border border-slate-700 px-3 py-1 text-slate-300">
                 当前风险偏好：{" "}
                 <span className="font-semibold text-sky-300">
-                  {currentMode === "conservative"
+                  {onchainRiskMode === null
+                    ? "未设置"
+                    : onchainRiskMode === "conservative"
                     ? "保守"
-                    : currentMode === "balanced"
+                    : onchainRiskMode === "balanced"
                     ? "均衡"
                     : "激进"}
                 </span>
@@ -474,59 +484,140 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                        Global Risk
+                        ZetaChain Security
                       </p>
                       <p className="mt-1 text-sm font-medium text-slate-50">
-                        全链组合风险评分
+                        ZetaChain 安全评分
                       </p>
                     </div>
                     <div className="flex flex-col items-end text-right">
-                      <span className="text-2xl font-semibold text-amber-300">
-                        {mockGlobalRisk.score}
-                      </span>
-                      <span className="text-xs text-slate-300">
-                        {mockGlobalRisk.label}
-                      </span>
+                      {(() => {
+                        const zetaChainData = chainSecurities.get(7001);
+                        if (!zetaChainData) {
+                          return (
+                            <>
+                              <span className="text-2xl font-semibold text-slate-500">
+                                --
+                              </span>
+                              <span className="text-xs text-slate-500">
+                                加载中...
+                              </span>
+                            </>
+                          );
+                        }
+                        const score = zetaChainData.score.overall;
+                        const { label, comment } = getRiskLabelAndComment(score);
+                        return (
+                          <>
+                            <span className="text-2xl font-semibold text-amber-300">
+                              {score}
+                            </span>
+                            <span className="text-xs text-slate-300">
+                              {label}
+                            </span>
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                   <p className="text-xs leading-relaxed text-slate-300 sm:text-sm">
-                    {mockGlobalRisk.comment}
+                    {(() => {
+                      const zetaChainData = chainSecurities.get(7001);
+                      if (!zetaChainData) {
+                        return "正在从链上加载 ZetaChain 安全数据...";
+                      }
+                      const score = zetaChainData.score.overall;
+                      const { comment } = getRiskLabelAndComment(score);
+                      return comment;
+                    })()}
                   </p>
 
                   <div className="mt-3 grid gap-3 text-xs text-slate-200 sm:grid-cols-3 sm:text-sm">
-                    <div className="rounded-2xl bg-slate-900/80 p-3">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        协议风险
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-50">
-                        中等
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        部分借贷与流动性协议利用率偏高，已开启分散与限额策略。
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900/80 p-3">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        链级风险
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-50">
-                        偏低
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        主要资产分布在蓝筹链，监控重点为临时性拥堵与 Gas 异常。
-                      </p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900/80 p-3">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">
-                        市场波动
-                      </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-50">
-                        正常
-                      </p>
-                      <p className="mt-1 text-[11px] text-slate-400">
-                        波动率处于近 30 天均值附近，暂不触发大规模仓位调整。
-                      </p>
-                    </div>
+                    {(() => {
+                      const zetaChainData = chainSecurities.get(7001);
+                      if (!zetaChainData) {
+                        return (
+                          <>
+                            <div className="rounded-2xl bg-slate-900/80 p-3">
+                              <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                                协议风险
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-slate-500">
+                                加载中...
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-900/80 p-3">
+                              <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                                链级风险
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-slate-500">
+                                加载中...
+                              </p>
+                            </div>
+                            <div className="rounded-2xl bg-slate-900/80 p-3">
+                              <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                                市场风险
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-slate-500">
+                                加载中...
+                              </p>
+                            </div>
+                          </>
+                        );
+                      }
+                      const protocolScore = zetaChainData.score.protocol;
+                      const chainScore = zetaChainData.score.chain;
+                      const marketScore = zetaChainData.score.market;
+                      return (
+                        <>
+                          <div className="rounded-2xl bg-slate-900/80 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              协议风险
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-50">
+                              {getRiskLevel(protocolScore)} ({protocolScore})
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              {protocolScore >= 60
+                                ? "协议风险可控，各 DeFi 协议运行正常。"
+                                : protocolScore >= 40
+                                ? "部分协议存在风险，建议关注借贷与流动性协议利用率。"
+                                : "协议风险较高，建议分散资产并降低杠杆。"}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl bg-slate-900/80 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              链级风险
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-50">
+                              {getRiskLevel(chainScore)} ({chainScore})
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              {chainScore >= 60
+                                ? "链级风险较低，网络运行稳定，Gas 费用正常。"
+                                : chainScore >= 40
+                                ? "链级风险中等，需关注网络拥堵与 Gas 异常波动。"
+                                : "链级风险较高，网络可能存在拥堵或异常情况。"}
+                            </p>
+                          </div>
+                          <div className="rounded-2xl bg-slate-900/80 p-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              市场风险
+                            </p>
+                            <p className="mt-1 text-sm font-semibold text-slate-50">
+                              {getRiskLevel(marketScore)} ({marketScore})
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-400">
+                              {marketScore >= 60
+                                ? "市场波动正常，价格波动处于合理范围。"
+                                : marketScore >= 40
+                                ? "市场波动加剧，建议密切关注价格变化。"
+                                : "市场波动剧烈，建议降低仓位或执行防御策略。"}
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -541,28 +632,59 @@ export default function DashboardPage() {
                         风险偏好与自动策略
                       </p>
                     </div>
-                    <span className="rounded-full bg-sky-500/20 px-3 py-1 text-[11px] font-medium text-sky-200">
-                      Demo · 前端 Mock，无真实链上操作
-                    </span>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {STRATEGY_MODES.map((mode) => {
-                      const active = currentMode === mode.id;
+                    {(() => {
+                      if (!userStrategy) {
+                        return (
+                          <span className="rounded-full bg-slate-500/20 px-3 py-1 text-[11px] font-medium text-slate-400">
+                            加载中...
+                          </span>
+                        );
+                      }
+                      // 检查是否有链上数据（通过检查是否存在非默认值）
+                      const hasOnchainData =
+                        userStrategy.overallThreshold > 0 ||
+                        userStrategy.protocolRiskThreshold > 0 ||
+                        userStrategy.transferRatio > 0;
                       return (
-                        <button
-                          key={mode.id}
-                          onClick={() => setCurrentMode(mode.id)}
-                          className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm ${
-                            active
-                              ? "border-sky-400 bg-sky-500/20 text-sky-100"
-                              : "border-slate-700 text-slate-200 hover:border-slate-400"
+                        <span
+                          className={`rounded-full px-3 py-1 text-[11px] font-medium ${
+                            hasOnchainData
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : "bg-slate-500/20 text-slate-400"
                           }`}
                         >
-                          {mode.label}
-                        </button>
+                          {hasOnchainData
+                            ? "链上数据 · 已同步"
+                            : "本地配置 · 未上链"}
+                        </span>
                       );
-                    })}
+                    })()}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {(() => {
+                      if (onchainRiskMode === null) {
+                        return (
+                          <span className="text-xs text-slate-500">
+                            未设置（请前往策略配置页面设置）
+                          </span>
+                        );
+                      }
+                      const currentModeData = STRATEGY_MODES.find(
+                        (m) => m.id === onchainRiskMode
+                      );
+                      if (!currentModeData) return null;
+                      return (
+                        <>
+                          <span className="rounded-full border border-sky-400 bg-sky-500/20 px-4 py-2 text-sm font-medium text-sky-100">
+                            {currentModeData.label}
+                          </span>
+                          <span className="text-xs text-slate-400">
+                            {currentModeData.desc}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-2 text-xs text-slate-200 sm:text-sm">
@@ -606,68 +728,83 @@ export default function DashboardPage() {
               </section>
 
               {/* Chains & alerts */}
-              <section className="grid gap-5 md:grid-cols-[1.2fr,1fr]">
+              <section>
                 <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-slate-50">
                       多链资产与风险视图
                     </p>
                     <span className="text-xs text-slate-400">
-                      数据示意 · 后续通过 ZetaChain 读取链上真实状态
+                      {account
+                        ? "实时数据 · 从各测试网 RPC 读取"
+                        : "请连接钱包查看资产"}
                     </span>
                   </div>
                   <div className="divide-y divide-slate-800/80 text-xs text-slate-200 sm:text-sm">
-                    {mockChains.map((chain) => (
-                      <div
-                        key={chain.name}
-                        className="flex items-center justify-between py-3"
-                      >
-                        <div>
-                          <p className="font-medium">{chain.name}</p>
-                          <p className="text-[11px] text-slate-400 sm:text-xs">
-                            健康度：{chain.health}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-mono text-sm text-slate-50">
-                            {chain.value}
-                          </p>
-                          <p className="text-[11px] text-amber-300 sm:text-xs">
-                            风险评分：{chain.risk}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                    {ASSET_CHAINS.map((chain) => {
+                      const registryData: RegistryChainSecurity | undefined =
+                        chainSecurities.get(chain.id);
+                      const state = assetStates[chain.id];
+                      const loadingBalance = !!state?.loading;
+                      const hasError = !!state?.error;
+                      const balance =
+                        state?.balance !== null && state?.balance !== undefined
+                          ? state.balance
+                          : account
+                          ? "--"
+                          : "-";
 
-                <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
-                  <p className="text-sm font-medium text-slate-50">
-                    实时告警流
-                  </p>
-                  <div className="space-y-3 text-xs text-slate-200 sm:text-sm">
-                    {mockAlerts.map((alert, idx) => (
-                      <div
-                        key={idx}
-                        className="rounded-2xl bg-slate-900/85 p-3 ring-1 ring-slate-800/80"
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium">{alert.title}</p>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              alert.level === "高"
-                                ? "bg-rose-500/20 text-rose-200"
-                                : "bg-amber-500/20 text-amber-200"
-                            }`}
-                          >
-                            {alert.level} 优先级
-                          </span>
+                      const overallScore = registryData?.score.overall ?? null;
+
+                      let health: string;
+                      let riskScore: number;
+
+                      if (overallScore !== null) {
+                        riskScore = overallScore;
+                        if (overallScore >= 80) health = "优";
+                        else if (overallScore >= 60) health = "良好";
+                        else if (overallScore >= 40) health = "一般";
+                        else health = "低";
+                      } else {
+                        health = "未评估";
+                        riskScore = 0;
+                      }
+
+                      const chainMeta = CHAIN_NAMES[chain.id];
+
+                      return (
+                        <div
+                          key={chain.id}
+                          className="flex items-center justify-between py-3"
+                        >
+                          <div>
+                            <p className="font-medium">
+                              {chainMeta?.name ?? chain.name}
+                            </p>
+                            <p className="text-[11px] text-slate-400 sm:text-xs">
+                              健康度：{health}
+                              {overallScore !== null && ` · 安全分 ${overallScore}`}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-mono text-sm text-slate-50">
+                              {loadingBalance
+                                ? "加载中..."
+                                : hasError
+                                ? "查询失败"
+                                : account
+                                ? `${balance} ${chain.symbol}`
+                                : "-"}
+                            </p>
+                            {overallScore !== null && (
+                              <p className="text-[11px] text-amber-300 sm:text-xs">
+                                风险评分：{riskScore}
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <p className="mt-1 text-[11px] text-slate-300 sm:text-xs">
-                          {alert.desc}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </section>
@@ -733,31 +870,6 @@ export default function DashboardPage() {
                     >
                       {loading ? "处理中..." : "授权当前账户为 Guardian"}
                     </button>
-                  )}
-
-                  {isGuardian && (
-                    <button
-                      onClick={handleExecuteDefense}
-                      disabled={loading}
-                      className="mb-3 w-full rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {loading ? "执行中..." : "🚀 触发防御动作（Demo）"}
-                    </button>
-                  )}
-
-                  {error && (
-                    <p className="mb-3 text-[11px] text-rose-300">{error}</p>
-                  )}
-
-                  {txHash && (
-                    <a
-                      href={`https://zetachain-athens-3.blockscout.com/tx/${txHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mb-3 block text-[11px] text-sky-400 hover:text-sky-300"
-                    >
-                      查看交易: {shortAddress(txHash)} →
-                    </a>
                   )}
 
                   {/* 防御历史记录 */}
@@ -1351,6 +1463,9 @@ export default function DashboardPage() {
                           userStrategy.preferNativeBridgeOnly
                         );
                         await tx.wait();
+                        
+                        // 写入成功后，更新链上的风险偏好
+                        setOnchainRiskMode(userStrategy.mode);
                       } catch (e: unknown) {
                         const err =
                           e instanceof Error
@@ -1598,52 +1713,60 @@ export default function DashboardPage() {
                     安全事件与防御演练时间线
                   </h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    汇总 AI 告警与链上防御执行记录，帮助你回放整个「发现 → 决策 → 执行」过程。
+                    显示链上防御执行记录，帮助你回放整个「决策 → 执行」过程。
                   </p>
                 </div>
                 <div className="text-[11px] text-slate-500">
                   {account
-                    ? "已连接钱包，可读取真实防御历史记录 + 示例告警。"
-                    : "未连接钱包时仅展示示例告警，可连接钱包查看真实防御记录。"}
+                    ? "已连接钱包，可读取真实防御历史记录。"
+                    : "请连接钱包查看链上防御执行记录。"}
                 </div>
               </div>
 
               <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-                <p className="text-xs font-semibold text-slate-200">
-                  事件时间线（示意）
-                </p>
-                <div className="space-y-3 text-[11px] text-slate-300 sm:text-xs">
-                  {mockAlerts.map((alert, idx) => (
-                    <div key={`alert-${idx}`} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className="h-2 w-2 rounded-full bg-amber-400" />
-                        <div className="h-full w-px bg-slate-700" />
-                      </div>
-                      <div className="flex-1 rounded-2xl bg-slate-900/80 p-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-slate-500">
-                            AI 告警（示例）
-                          </span>
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                              alert.level === "高"
-                                ? "bg-rose-500/20 text-rose-200"
-                                : "bg-amber-500/20 text-amber-200"
-                            }`}
-                          >
-                            {alert.level} 优先级
-                          </span>
-                        </div>
-                        <p className="mt-1 font-medium text-slate-100">
-                          {alert.title}
-                        </p>
-                        <p className="mt-1 text-slate-300">{alert.desc}</p>
-                      </div>
-                    </div>
-                  ))}
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-200">
+                    链上防御执行记录
+                  </p>
+                  {account && isGuardian && (
+                    <button
+                      onClick={handleExecuteDefense}
+                      disabled={loading}
+                      className="rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? "执行中..." : "🚀 触发防御动作（Demo）"}
+                    </button>
+                  )}
+                </div>
 
-                  {account && actionsCount > 0 && (
-                    <div className="pt-2">
+                {account && !isGuardian && isOwner && (
+                  <button
+                    onClick={handleSetGuardian}
+                    disabled={loading}
+                    className="w-full rounded-full border border-sky-500/50 bg-sky-500/10 px-4 py-2 text-xs font-medium text-sky-200 transition hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {loading ? "处理中..." : "授权当前账户为 Guardian"}
+                  </button>
+                )}
+
+                {error && (
+                  <p className="text-[11px] text-rose-300">{error}</p>
+                )}
+
+                {txHash && (
+                  <a
+                    href={`https://zetachain-athens-3.blockscout.com/tx/${txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-[11px] text-sky-400 hover:text-sky-300"
+                  >
+                    查看交易: {shortAddress(txHash)} →
+                  </a>
+                )}
+
+                <div className="space-y-3 text-[11px] text-slate-300 sm:text-xs">
+                  {account && actionsCount > 0 ? (
+                    <div>
                       {defenseHistory.map((action, idx) => (
                         <div key={`defense-${idx}`} className="flex gap-3">
                           <div className="flex flex-col items-center">
@@ -1676,12 +1799,13 @@ export default function DashboardPage() {
                         </div>
                       ))}
                     </div>
-                  )}
-
-                  {account && actionsCount === 0 && (
-                    <p className="pt-2 text-[11px] text-slate-500">
-                      当前地址还没有任何防御执行记录，可以在「总览」中点击
-                      「触发防御动作（Demo）」来生成一条演练记录。
+                  ) : account ? (
+                    <p className="text-[11px] text-slate-500">
+                      当前地址还没有任何防御执行记录，可以点击上方的「触发防御动作（Demo）」来生成一条演练记录。
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-slate-500">
+                      请连接钱包查看链上防御执行记录。
                     </p>
                   )}
                 </div>

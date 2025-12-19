@@ -35,9 +35,31 @@ export function WalletConnectButton({
      const { ethereum } = window as any;
      if (!ethereum) return;
 
+     // 页面刷新后检查钱包是否已连接
+     const checkConnectedWallet = async () => {
+       try {
+         const provider = new ethers.BrowserProvider(ethereum);
+         const accounts = await provider.listAccounts();
+         if (accounts && accounts.length > 0) {
+           setAccount(accounts[0].address);
+           setStatus("connected");
+         }
+       } catch (err) {
+         console.error("检查钱包连接状态失败:", err);
+       }
+     };
+
+     checkConnectedWallet();
+
      // 监听账户/网络切换，保持前端状态同步
      const handleAccountsChanged = (accounts: string[]) => {
-       setAccount(accounts[0] ?? null);
+       if (accounts && accounts.length > 0) {
+         setAccount(accounts[0]);
+         setStatus("connected");
+       } else {
+         setAccount(null);
+         setStatus("idle");
+       }
      };
 
      ethereum.on?.("accountsChanged", handleAccountsChanged);
@@ -108,29 +130,27 @@ export function WalletConnectButton({
   if (variant === "compact") {
     return (
       <div className="relative">
-        <button
-          onClick={connectWallet}
-          disabled={status === "connecting"}
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
-            account
-              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-              : "border-slate-700 bg-slate-900/60 text-slate-200 hover:border-slate-600 hover:bg-slate-900"
-          } disabled:cursor-not-allowed disabled:opacity-75`}
-        >
-          {status === "connecting" ? (
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
-              连接中
-            </span>
-          ) : account ? (
-            <span className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              {buttonLabel}
-            </span>
-          ) : (
-            buttonLabel
-          )}
-        </button>
+        {account ? (
+          <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            {buttonLabel}
+          </div>
+        ) : (
+          <button
+            onClick={connectWallet}
+            disabled={status === "connecting"}
+            className="rounded-full border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-75"
+          >
+            {status === "connecting" ? (
+              <span className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
+                连接中
+              </span>
+            ) : (
+              buttonLabel
+            )}
+          </button>
+        )}
         {showError && errorMsg && (
           <div className="absolute right-0 top-full z-50 mt-1 rounded-lg border border-rose-500/30 bg-slate-900 px-2 py-1 text-[10px] text-rose-300 shadow-lg">
             {errorMsg}
@@ -142,13 +162,20 @@ export function WalletConnectButton({
 
   return (
     <div className="space-y-1">
-      <button
-        onClick={connectWallet}
-        disabled={status === "connecting"}
-        className="rounded-full bg-sky-500 px-5 py-2.5 text-sm font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-75"
-      >
-        {buttonLabel}
-      </button>
+      {account ? (
+        <div className="flex items-center gap-2 rounded-full border border-emerald-500/50 bg-emerald-500/10 px-5 py-2.5 text-sm font-medium text-emerald-300">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          {buttonLabel}
+        </div>
+      ) : (
+        <button
+          onClick={connectWallet}
+          disabled={status === "connecting"}
+          className="rounded-full bg-sky-500 px-5 py-2.5 text-sm font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-75"
+        >
+          {buttonLabel}
+        </button>
+      )}
       {showError && errorMsg && (
         <p className="text-[11px] text-rose-300/90">{errorMsg}</p>
       )}
