@@ -58,6 +58,12 @@ export default function RootLayout({
                 >
                   安全指数
                 </a>
+                <a
+                  href="/architecture"
+                  className="rounded-full px-3 py-1.5 text-slate-200 transition hover:bg-slate-900"
+                >
+                  系统架构
+                </a>
                 <div className="ml-2">
                   <WalletConnectButton variant="compact" showError={false} />
                 </div>
