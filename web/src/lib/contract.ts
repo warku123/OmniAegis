@@ -5,6 +5,462 @@ export const GUARDIAN_CONTRACT_ADDRESS =
 export const SECURITY_REGISTRY_ADDRESS =
   "0x0472a36dC5497a4F8AB16bE37D235424484f7061";
 
+export const STRATEGY_REGISTRY_ADDRESS: string =
+  "0xE64D37DA141A8789FEf41da097C93b29E0Ffc197";
+
+export const STRATEGY_REGISTRY_ABI = [
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "user",
+        type: "address",
+      },
+      {
+        components: [
+          {
+            internalType: "uint8",
+            name: "riskMode",
+            type: "uint8",
+          },
+          {
+            internalType: "bool",
+            name: "autoExecute",
+            type: "bool",
+          },
+          {
+            internalType: "bool",
+            name: "protectStablecoins",
+            type: "bool",
+          },
+          {
+            internalType: "bool",
+            name: "protectBlueChips",
+            type: "bool",
+          },
+          {
+            internalType: "uint8",
+            name: "defaultOverallThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "defaultProtocolThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "defaultTransferRatio",
+            type: "uint8",
+          },
+          {
+            internalType: "uint256",
+            name: "primarySafeChainId",
+            type: "uint256",
+          },
+          {
+            internalType: "uint256",
+            name: "secondarySafeChainId",
+            type: "uint256",
+          },
+          {
+            internalType: "uint256",
+            name: "minCrossChainValueUsd",
+            type: "uint256",
+          },
+          {
+            internalType: "uint16",
+            name: "maxDailyExitCount",
+            type: "uint16",
+          },
+          {
+            internalType: "uint16",
+            name: "maxSlippageBps",
+            type: "uint16",
+          },
+          {
+            internalType: "uint16",
+            name: "maxBridgeFeeBps",
+            type: "uint16",
+          },
+          {
+            internalType: "bool",
+            name: "preferNativeBridgeOnly",
+            type: "bool",
+          },
+          {
+            internalType: "bool",
+            name: "exists",
+            type: "bool",
+          },
+        ],
+        indexed: false,
+        internalType: "struct StrategyRegistry.GlobalConfig",
+        name: "config",
+        type: "tuple",
+      },
+    ],
+    name: "GlobalConfigUpdated",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "user",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "chainId",
+        type: "uint256",
+      },
+      {
+        components: [
+          {
+            internalType: "uint8",
+            name: "overallThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "protocolThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "transferRatio",
+            type: "uint8",
+          },
+          {
+            internalType: "bool",
+            name: "exists",
+            type: "bool",
+          },
+        ],
+        indexed: false,
+        internalType: "struct StrategyRegistry.ChainThreshold",
+        name: "threshold",
+        type: "tuple",
+      },
+    ],
+    name: "ChainThresholdUpdated",
+    type: "event",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256",
+        name: "chainId",
+        type: "uint256",
+      },
+    ],
+    name: "clearChainThreshold",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "user",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "chainId",
+        type: "uint256",
+      },
+    ],
+    name: "getChainThreshold",
+    outputs: [
+      {
+        components: [
+          {
+            internalType: "uint8",
+            name: "overallThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "protocolThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "transferRatio",
+            type: "uint8",
+          },
+          {
+            internalType: "bool",
+            name: "exists",
+            type: "bool",
+          },
+        ],
+        internalType: "struct StrategyRegistry.ChainThreshold",
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "user",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "chainId",
+        type: "uint256",
+      },
+    ],
+    name: "getEffectiveThreshold",
+    outputs: [
+      {
+        components: [
+          {
+            internalType: "uint8",
+            name: "overallThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "protocolThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "transferRatio",
+            type: "uint8",
+          },
+          {
+            internalType: "bool",
+            name: "exists",
+            type: "bool",
+          },
+        ],
+        internalType: "struct StrategyRegistry.ChainThreshold",
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "address",
+        name: "user",
+        type: "address",
+      },
+    ],
+    name: "getGlobalConfig",
+    outputs: [
+      {
+        components: [
+          {
+            internalType: "uint8",
+            name: "riskMode",
+            type: "uint8",
+          },
+          {
+            internalType: "bool",
+            name: "autoExecute",
+            type: "bool",
+          },
+          {
+            internalType: "bool",
+            name: "protectStablecoins",
+            type: "bool",
+          },
+          {
+            internalType: "bool",
+            name: "protectBlueChips",
+            type: "bool",
+          },
+          {
+            internalType: "uint8",
+            name: "defaultOverallThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "defaultProtocolThreshold",
+            type: "uint8",
+          },
+          {
+            internalType: "uint8",
+            name: "defaultTransferRatio",
+            type: "uint8",
+          },
+          {
+            internalType: "uint256",
+            name: "primarySafeChainId",
+            type: "uint256",
+          },
+          {
+            internalType: "uint256",
+            name: "secondarySafeChainId",
+            type: "uint256",
+          },
+          {
+            internalType: "uint256",
+            name: "minCrossChainValueUsd",
+            type: "uint256",
+          },
+          {
+            internalType: "uint16",
+            name: "maxDailyExitCount",
+            type: "uint16",
+          },
+          {
+            internalType: "uint16",
+            name: "maxSlippageBps",
+            type: "uint16",
+          },
+          {
+            internalType: "uint16",
+            name: "maxBridgeFeeBps",
+            type: "uint16",
+          },
+          {
+            internalType: "bool",
+            name: "preferNativeBridgeOnly",
+            type: "bool",
+          },
+          {
+            internalType: "bool",
+            name: "exists",
+            type: "bool",
+          },
+        ],
+        internalType: "struct StrategyRegistry.GlobalConfig",
+        name: "",
+        type: "tuple",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint256[]",
+        name: "chainIds",
+        type: "uint256[]",
+      },
+      {
+        internalType: "uint8[]",
+        name: "overallThresholds",
+        type: "uint8[]",
+      },
+      {
+        internalType: "uint8[]",
+        name: "protocolThresholds",
+        type: "uint8[]",
+      },
+      {
+        internalType: "uint8[]",
+        name: "transferRatios",
+        type: "uint8[]",
+      },
+    ],
+    name: "setChainThresholds",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "uint8",
+        name: "riskMode",
+        type: "uint8",
+      },
+      {
+        internalType: "bool",
+        name: "autoExecute",
+        type: "bool",
+      },
+      {
+        internalType: "bool",
+        name: "protectStablecoins",
+        type: "bool",
+      },
+      {
+        internalType: "bool",
+        name: "protectBlueChips",
+        type: "bool",
+      },
+      {
+        internalType: "uint8",
+        name: "defaultOverallThreshold",
+        type: "uint8",
+      },
+      {
+        internalType: "uint8",
+        name: "defaultProtocolThreshold",
+        type: "uint8",
+      },
+      {
+        internalType: "uint8",
+        name: "defaultTransferRatio",
+        type: "uint8",
+      },
+      {
+        internalType: "uint256",
+        name: "primarySafeChainId",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "secondarySafeChainId",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "minCrossChainValueUsd",
+        type: "uint256",
+      },
+      {
+        internalType: "uint16",
+        name: "maxDailyExitCount",
+        type: "uint16",
+      },
+      {
+        internalType: "uint16",
+        name: "maxSlippageBps",
+        type: "uint16",
+      },
+      {
+        internalType: "uint16",
+        name: "maxBridgeFeeBps",
+        type: "uint16",
+      },
+      {
+        internalType: "bool",
+        name: "preferNativeBridgeOnly",
+        type: "bool",
+      },
+    ],
+    name: "setGlobalConfig",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
 export const GUARDIAN_ABI = [
   {
     inputs: [],

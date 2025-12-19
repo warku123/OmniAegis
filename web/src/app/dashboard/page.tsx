@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ethers } from "ethers";
 import { WalletConnectButton } from "@/components/WalletConnectButton";
 import { useGuardianContract } from "@/hooks/useGuardianContract";
@@ -9,7 +9,11 @@ import {
   CHAIN_NAMES,
   type ChainSecurity as RegistryChainSecurity,
 } from "@/hooks/useSecurityRegistry";
-import { GUARDIAN_CONTRACT_ADDRESS } from "@/lib/contract";
+import {
+  GUARDIAN_CONTRACT_ADDRESS,
+  STRATEGY_REGISTRY_ADDRESS,
+  STRATEGY_REGISTRY_ABI,
+} from "@/lib/contract";
 import type { DefenseAction } from "@/hooks/useGuardianContract";
 
 type StrategyMode = "conservative" | "balanced" | "aggressive";
@@ -137,6 +141,11 @@ export default function DashboardPage() {
   const [userStrategy, setUserStrategy] = useState<UserStrategy | null>(null);
   const [activeThresholdChainId, setActiveThresholdChainId] =
     useState<number>(7001); // 默认在 ZetaChain 上配置
+  const [syncingGlobalConfig, setSyncingGlobalConfig] = useState(false);
+  const [syncingChainThresholds, setSyncingChainThresholds] = useState(false);
+  const [globalConfigError, setGlobalConfigError] = useState<string | null>(null);
+  const [chainThresholdsError, setChainThresholdsError] = useState<string | null>(null);
+  const loadingStrategyRef = useRef(false); // 防止重复加载策略
   const {
     account,
     isGuardian,
@@ -217,54 +226,116 @@ export default function DashboardPage() {
     return date.toLocaleString("zh-CN");
   };
 
-  // 初始化用户策略（从 localStorage 读取）
+  // 初始化用户策略（从链上读取）
   useEffect(() => {
-    if (!account) return;
-    try {
-      const key = `omniAegis:strategy:${account.toLowerCase()}`;
-      const raw = window.localStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw) as UserStrategy;
-        setUserStrategy(parsed);
-        setCurrentMode(parsed.mode);
-      } else {
-        const defaultStrategy: UserStrategy = {
+    const loadStrategy = async () => {
+      if (!account) {
+        setUserStrategy(null);
+        return;
+      }
+      // 防止重复执行
+      if (loadingStrategyRef.current) {
+        return;
+      }
+      loadingStrategyRef.current = true;
+      try {
+        // 1. 默认全 0 策略
+        const base: UserStrategy = {
           mode: "balanced",
-          overallThreshold: 60,
-          protocolRiskThreshold: 75,
+          overallThreshold: 0,
+          protocolRiskThreshold: 0,
           autoExecute: false,
-          transferRatio: 50,
-          protectStablecoins: true,
-          protectBlueChips: true,
+          transferRatio: 0,
+          protectStablecoins: false,
+          protectBlueChips: false,
           perChainOverallThresholds: {},
           perChainProtocolThresholds: {},
           perChainTransferRatios: {},
           primarySafeChainId: 7001,
-          secondarySafeChainId: 80002,
-          minCrossChainValueUsd: 50,
-          maxDailyExitCount: 3,
-          maxSlippagePercent: 1,
-          maxBridgeFeePercent: 1,
+          secondarySafeChainId: 0,
+          minCrossChainValueUsd: 0,
+          maxDailyExitCount: 0,
+          maxSlippagePercent: 0,
+          maxBridgeFeePercent: 0,
           preferNativeBridgeOnly: true,
           avoidChainIds: [],
         };
-        setUserStrategy(defaultStrategy);
-        window.localStorage.setItem(key, JSON.stringify(defaultStrategy));
+
+        // 2. 从链上加载（如果有 StrategyRegistry 地址）
+        if (
+          STRATEGY_REGISTRY_ADDRESS &&
+          STRATEGY_REGISTRY_ADDRESS !==
+            "0x0000000000000000000000000000000000000000"
+        ) {
+          const { ethereum } = window as any;
+          if (ethereum) {
+            const provider = new ethers.BrowserProvider(ethereum);
+            const contract = new ethers.Contract(
+              STRATEGY_REGISTRY_ADDRESS,
+              STRATEGY_REGISTRY_ABI,
+              provider
+            );
+            const cfg = await contract.getGlobalConfig(account);
+            if (cfg.exists) {
+              base.mode =
+                cfg.riskMode === 0
+                  ? "conservative"
+                  : cfg.riskMode === 2
+                  ? "aggressive"
+                  : "balanced";
+              base.autoExecute = cfg.autoExecute;
+              base.protectStablecoins = cfg.protectStablecoins;
+              base.protectBlueChips = cfg.protectBlueChips;
+              base.overallThreshold = Number(cfg.defaultOverallThreshold);
+              base.protocolRiskThreshold = Number(
+                cfg.defaultProtocolThreshold
+              );
+              base.transferRatio = Number(cfg.defaultTransferRatio);
+              base.primarySafeChainId = Number(cfg.primarySafeChainId);
+              base.secondarySafeChainId = Number(cfg.secondarySafeChainId);
+              base.minCrossChainValueUsd = Number(cfg.minCrossChainValueUsd);
+              base.maxDailyExitCount = Number(cfg.maxDailyExitCount);
+              base.maxSlippagePercent = Number(cfg.maxSlippageBps) / 100;
+              base.maxBridgeFeePercent = Number(cfg.maxBridgeFeeBps) / 100;
+              base.preferNativeBridgeOnly = cfg.preferNativeBridgeOnly;
+            }
+
+            // 加载每条链的阈值
+            const perOverall: Record<number, number> = {};
+            const perProtocol: Record<number, number> = {};
+            const perRatio: Record<number, number> = {};
+            for (const c of ASSET_CHAINS) {
+              const th = await contract.getChainThreshold(account, c.id);
+              if (th.exists) {
+                perOverall[c.id] = Number(th.overallThreshold);
+                perProtocol[c.id] = Number(th.protocolThreshold);
+                perRatio[c.id] = Number(th.transferRatio);
+              }
+            }
+            base.perChainOverallThresholds = perOverall;
+            base.perChainProtocolThresholds = perProtocol;
+            base.perChainTransferRatios = perRatio;
+          }
+        }
+
+        setUserStrategy(base);
+        setCurrentMode(base.mode);
+      } catch (e) {
+        console.error("从链上加载策略失败:", e);
+        setUserStrategy(null);
+      } finally {
+        loadingStrategyRef.current = false;
       }
-    } catch (e) {
-      console.error("加载本地策略失败:", e);
-    }
+    };
+
+    loadStrategy().catch((e) => {
+      console.error("加载策略时出错:", e);
+      loadingStrategyRef.current = false;
+    });
   }, [account]);
 
   const saveStrategy = (strategy: UserStrategy) => {
     setUserStrategy(strategy);
-    if (!account) return;
-    try {
-      const key = `omniAegis:strategy:${account.toLowerCase()}`;
-      window.localStorage.setItem(key, JSON.stringify(strategy));
-    } catch (e) {
-      console.error("保存本地策略失败:", e);
-    }
   };
 
   // 加载各测试网的原生资产余额（仅在有账户时触发）
@@ -900,38 +971,6 @@ export default function DashboardPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    Risk Appetite
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {STRATEGY_MODES.map((mode) => {
-                      const active = currentMode === mode.id;
-                      return (
-                        <button
-                          key={mode.id}
-                          onClick={() => {
-                            setCurrentMode(mode.id);
-                            if (userStrategy) {
-                              saveStrategy({ ...userStrategy, mode: mode.id });
-                            }
-                          }}
-                          className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm ${
-                            active
-                              ? "border-sky-400 bg-sky-500/20 text-sky-100"
-                              : "border-slate-700 text-slate-200 hover:border-slate-400"
-                          }`}
-                        >
-                          {mode.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[11px] text-slate-400">
-                    不同风险偏好会影响 AI 对「是否立即触发逃生」的判断阈值（未来后端/合约可以直接读取并执行）。
-                  </p>
-                </div>
-
-                <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                     触发阈值（按链）
                   </p>
                   <div className="space-y-3 text-[11px] text-slate-300">
@@ -1133,13 +1172,207 @@ export default function DashboardPage() {
                       );
                     })()}
                   </div>
+
+                  {/* 写入按链配置按钮 */}
+                  <div className="flex items-center justify-between gap-2 border-t border-slate-800 pt-3">
+                    <button
+                      type="button"
+                      disabled={
+                        !account ||
+                        syncingChainThresholds ||
+                        !userStrategy ||
+                        !STRATEGY_REGISTRY_ADDRESS ||
+                        STRATEGY_REGISTRY_ADDRESS ===
+                          "0x0000000000000000000000000000000000000000"
+                      }
+                      onClick={async () => {
+                        if (!account || !userStrategy) return;
+                        setChainThresholdsError(null);
+                        try {
+                          setSyncingChainThresholds(true);
+                          const { ethereum } = window as any;
+                          if (!ethereum) {
+                            throw new Error("未检测到以太坊钱包");
+                          }
+                          const provider = new ethers.BrowserProvider(ethereum);
+                          const signer = await provider.getSigner();
+                          const contract = new ethers.Contract(
+                            STRATEGY_REGISTRY_ADDRESS,
+                            STRATEGY_REGISTRY_ABI,
+                            signer
+                          );
+
+                          // 写入每条链的单独阈值（按当前 UI 4 条链）
+                          const chainIds = ASSET_CHAINS.map((c) => c.id);
+                          const overallThresholds = chainIds.map(
+                            (id) =>
+                              userStrategy.perChainOverallThresholds[id] ??
+                              userStrategy.overallThreshold
+                          );
+                          const protocolThresholds = chainIds.map(
+                            (id) =>
+                              userStrategy.perChainProtocolThresholds[id] ??
+                              userStrategy.protocolRiskThreshold
+                          );
+                          const transferRatios = chainIds.map(
+                            (id) =>
+                              userStrategy.perChainTransferRatios[id] ??
+                              userStrategy.transferRatio
+                          );
+
+                          const tx = await contract.setChainThresholds(
+                            chainIds,
+                            overallThresholds,
+                            protocolThresholds,
+                            transferRatios
+                          );
+                          await tx.wait();
+                        } catch (e: unknown) {
+                          const err =
+                            e instanceof Error
+                              ? e.message
+                              : "写入按链配置失败";
+                          setChainThresholdsError(err);
+                        } finally {
+                          setSyncingChainThresholds(false);
+                        }
+                      }}
+                      className="rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {syncingChainThresholds
+                        ? "写入中..."
+                        : "写入按链配置"}
+                    </button>
+                    {chainThresholdsError && (
+                      <p className="text-[11px] text-rose-400">
+                        {chainThresholdsError}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
 
               <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4 text-[11px] text-slate-300 sm:text-xs">
                 <p className="text-xs font-semibold text-slate-200">
-                  跨链执行参数
+                  全局配置与跨链执行参数
                 </p>
+
+                {/* Risk Appetite 部分 */}
+                <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Risk Appetite
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {STRATEGY_MODES.map((mode) => {
+                      const active = currentMode === mode.id;
+                      return (
+                        <button
+                          key={mode.id}
+                          onClick={() => {
+                            setCurrentMode(mode.id);
+                            if (userStrategy) {
+                              saveStrategy({ ...userStrategy, mode: mode.id });
+                            }
+                          }}
+                          className={`rounded-full border px-3 py-1.5 text-xs sm:text-sm ${
+                            active
+                              ? "border-sky-400 bg-sky-500/20 text-sky-100"
+                              : "border-slate-700 text-slate-200 hover:border-slate-400"
+                          }`}
+                        >
+                          {mode.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    不同风险偏好会影响 AI 对「是否立即触发逃生」的判断阈值（未来后端/合约可以直接读取并执行）。
+                  </p>
+                </div>
+
+                {/* 跨链执行参数部分 */}
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    跨链执行参数
+                  </p>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-900/60 px-3 py-2">
+                  <span className="text-[11px] text-slate-400">
+                    写入全局配置与跨链执行参数到链上。
+                  </span>
+                  <button
+                    type="button"
+                    disabled={
+                      !account ||
+                      syncingGlobalConfig ||
+                      !userStrategy ||
+                      !STRATEGY_REGISTRY_ADDRESS ||
+                      STRATEGY_REGISTRY_ADDRESS ===
+                        "0x0000000000000000000000000000000000000000"
+                    }
+                    onClick={async () => {
+                      if (!account || !userStrategy) return;
+                      setGlobalConfigError(null);
+                      try {
+                        setSyncingGlobalConfig(true);
+                        const { ethereum } = window as any;
+                        if (!ethereum) {
+                          throw new Error("未检测到以太坊钱包");
+                        }
+                        const provider = new ethers.BrowserProvider(ethereum);
+                        const signer = await provider.getSigner();
+                        const contract = new ethers.Contract(
+                          STRATEGY_REGISTRY_ADDRESS,
+                          STRATEGY_REGISTRY_ABI,
+                          signer
+                        );
+
+                        const riskMode =
+                          userStrategy.mode === "conservative"
+                            ? 0
+                            : userStrategy.mode === "aggressive"
+                            ? 2
+                            : 1;
+
+                        // 写入全局配置（包括跨链执行参数）
+                        const tx = await contract.setGlobalConfig(
+                          riskMode,
+                          userStrategy.autoExecute,
+                          userStrategy.protectStablecoins,
+                          userStrategy.protectBlueChips,
+                          userStrategy.overallThreshold,
+                          userStrategy.protocolRiskThreshold,
+                          userStrategy.transferRatio,
+                          userStrategy.primarySafeChainId,
+                          userStrategy.secondarySafeChainId,
+                          userStrategy.minCrossChainValueUsd,
+                          userStrategy.maxDailyExitCount,
+                          Math.round(userStrategy.maxSlippagePercent * 100),
+                          Math.round(userStrategy.maxBridgeFeePercent * 100),
+                          userStrategy.preferNativeBridgeOnly
+                        );
+                        await tx.wait();
+                      } catch (e: unknown) {
+                        const err =
+                          e instanceof Error
+                            ? e.message
+                            : "写入跨链执行参数失败";
+                        setGlobalConfigError(err);
+                      } finally {
+                        setSyncingGlobalConfig(false);
+                      }
+                    }}
+                    className="rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {syncingGlobalConfig
+                      ? "写入中..."
+                      : "写入跨链执行参数"}
+                  </button>
+                </div>
+                {globalConfigError && (
+                  <p className="text-[11px] text-rose-400">
+                    {globalConfigError}
+                  </p>
+                )}
 
                 {/* 落地点选择 */}
                 <div className="space-y-2">
@@ -1347,9 +1580,11 @@ export default function DashboardPage() {
                     </label>
                   </div>
                   <span className="text-[10px] text-slate-500">
-                    当前策略仅保存在本地浏览器，后续可映射到链上的 Strategy 合约供 AI/合约读取
+                    当前页面会优先从链上的 StrategyRegistry 读取策略；如未设置，则默认值为 0
                   </span>
                 </div>
+                </div>
+              </div>
               </div>
             </section>
           )}
