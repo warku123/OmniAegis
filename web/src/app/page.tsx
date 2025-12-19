@@ -37,7 +37,8 @@ export default function Home() {
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts && accounts.length > 0) {
-        setAccount(accounts[0].address);
+        // 这里浏览器事件返回的是字符串数组，直接取第一个地址即可
+        setAccount(accounts[0]);
       } else {
         setAccount(null);
         setRiskMode(null);
