@@ -146,6 +146,13 @@ export default function DashboardPage() {
   const [globalConfigError, setGlobalConfigError] = useState<string | null>(null);
   const [chainThresholdsError, setChainThresholdsError] = useState<string | null>(null);
   const loadingStrategyRef = useRef(false); // 防止重复加载策略
+  const [currentStrategyConfig, setCurrentStrategyConfig] = useState<{
+    riskMode: string;
+    transferRatio: number;
+    minCrossChainValueUsd: bigint;
+    primarySafeChainId: bigint;
+    polygonThreshold: { transferRatio: number; exists: boolean } | null;
+  } | null>(null);
   const {
     account,
     isGuardian,
@@ -155,6 +162,7 @@ export default function DashboardPage() {
     error,
     setGuardian,
     executeDefense,
+    executeDefenseWithCrossChainExit,
     getAction,
     refresh,
   } = useGuardianContract();
@@ -201,20 +209,41 @@ export default function DashboardPage() {
 
   const handleExecuteDefense = async () => {
     if (!account) return;
+    if (onchainRiskMode === null) {
+      alert(
+        "❌ 请先在「策略配置」tab 中配置并写入策略到链上，然后再触发防御动作。"
+      );
+      return;
+    }
     try {
-      const actionType = "CROSS_CHAIN_EXIT";
+      // 调用 Guardian 记录防御动作
+      const polygonBalanceHint = BigInt(3 * 10 ** 18); // 例如 3 MATIC 等值
       const metadata = JSON.stringify({
-        reason: "AI 检测到高风险，触发自动防御",
+        reason: "AI 检测到 Polygon 风险，触发跨链退出",
         riskScore: 84,
         timestamp: Date.now(),
+        chains: ["ZetaChain", "Polygon"],
       });
-      const hash = await executeDefense(actionType, metadata);
+      
+      const hash = await executeDefenseWithCrossChainExit(
+        metadata,
+        polygonBalanceHint
+      );
+      
       setTxHash(hash);
       await refresh();
       await loadHistory();
-      alert(`防御动作已执行！交易哈希: ${hash}`);
+      
+      alert(`✅ 防御动作已记录！交易哈希: ${hash}`);
     } catch (err: any) {
-      alert(`失败: ${err.message}`);
+      const errorMsg = err.message || String(err);
+      if (errorMsg.includes("no strategy") || errorMsg.includes("策略")) {
+        alert(
+          "❌ 未检测到链上策略配置。请先在「策略配置」tab 中点击「写入跨链执行参数」按钮，将策略写入链上。"
+        );
+      } else {
+        alert(`失败: ${errorMsg}`);
+      }
     }
   };
 
@@ -225,6 +254,64 @@ export default function DashboardPage() {
     const date = new Date(Number(timestamp) * 1000);
     return date.toLocaleString("zh-CN");
   };
+
+  // 读取当前策略配置（用于在"安全事件" tab 显示）
+  useEffect(() => {
+    const loadCurrentStrategyConfig = async () => {
+      if (!account) {
+        setCurrentStrategyConfig(null);
+        return;
+      }
+      if (
+        !STRATEGY_REGISTRY_ADDRESS ||
+        STRATEGY_REGISTRY_ADDRESS === "0x0000000000000000000000000000000000000000"
+      ) {
+        setCurrentStrategyConfig(null);
+        return;
+      }
+      try {
+        const { ethereum } = window as any;
+        if (!ethereum) return;
+        const provider = new ethers.BrowserProvider(ethereum);
+        const contract = new ethers.Contract(
+          STRATEGY_REGISTRY_ADDRESS,
+          STRATEGY_REGISTRY_ABI,
+          provider
+        );
+        const cfg = await contract.getGlobalConfig(account);
+        if (!cfg.exists) {
+          setCurrentStrategyConfig(null);
+          return;
+        }
+        // 读取 Polygon 的单独阈值（chainId = 80002）
+        const polygonChainId = BigInt(80002);
+        const polygonTh = await contract.getEffectiveThreshold(account, polygonChainId);
+        // 同时读取原始 per-chain 配置，判断是否真的设置了单独配置
+        const polygonRawTh = await contract.getChainThreshold(account, polygonChainId);
+        const riskModeValue = Number(cfg.riskMode);
+        const riskModeStr =
+          riskModeValue === 0
+            ? "保守"
+            : riskModeValue === 2
+            ? "激进"
+            : "均衡";
+        setCurrentStrategyConfig({
+          riskMode: riskModeStr,
+          transferRatio: Number(cfg.defaultTransferRatio),
+          minCrossChainValueUsd: cfg.minCrossChainValueUsd,
+          primarySafeChainId: cfg.primarySafeChainId,
+          polygonThreshold: {
+            transferRatio: Number(polygonTh.transferRatio),
+            exists: polygonRawTh.exists, // 使用原始 per-chain 配置的 exists，而不是 getEffectiveThreshold 返回的
+          },
+        });
+      } catch (err) {
+        console.error("读取策略配置失败:", err);
+        setCurrentStrategyConfig(null);
+      }
+    };
+    loadCurrentStrategyConfig();
+  }, [account, onchainRiskMode]); // 当 onchainRiskMode 变化时也重新加载
 
   // 初始化用户策略（从链上读取）
   useEffect(() => {
@@ -1407,6 +1494,57 @@ export default function DashboardPage() {
                     跨链执行参数
                   </p>
 
+                  {/* 全局默认调仓比例 */}
+                  <div className="space-y-1 rounded-2xl border border-slate-800 bg-slate-900/40 p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[11px] font-semibold text-slate-200">
+                          全局默认调仓比例
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-slate-400">
+                          当触发跨链退出时，默认调整多少比例的仓位（如果某条链没有单独配置，则使用此全局默认值）
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={userStrategy?.transferRatio ?? 0}
+                          onChange={(e) => {
+                            if (!userStrategy) return;
+                            const v = Math.min(
+                              100,
+                              Math.max(0, Number(e.target.value) || 0)
+                            );
+                            saveStrategy({
+                              ...userStrategy,
+                              transferRatio: v,
+                            });
+                          }}
+                          className="w-16 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-right font-mono text-sky-300 outline-none focus:border-sky-400"
+                        />
+                        <span className="text-slate-500">%</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={userStrategy?.transferRatio ?? 0}
+                      onChange={(e) => {
+                        if (!userStrategy) return;
+                        const v = Number(e.target.value);
+                        saveStrategy({
+                          ...userStrategy,
+                          transferRatio: v,
+                        });
+                      }}
+                      className="w-full accent-sky-400"
+                    />
+                  </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-slate-900/60 px-3 py-2">
                   <span className="text-[11px] text-slate-400">
                     写入全局配置与跨链执行参数到链上。
@@ -1723,19 +1861,86 @@ export default function DashboardPage() {
                 </div>
               </div>
 
+              {/* 当前跨链参数显示 */}
+              {account && (
+                <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
+                  <p className="mb-3 text-xs font-semibold text-slate-200">
+                    当前跨链执行参数
+                  </p>
+                  {currentStrategyConfig ? (
+                    <div className="grid gap-3 text-[11px] sm:grid-cols-2">
+                      <div className="flex items-center justify-between rounded-xl bg-slate-900/60 px-3 py-2">
+                        <span className="text-slate-400">风险偏好</span>
+                        <span className="font-medium text-slate-100">
+                          {currentStrategyConfig.riskMode}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl bg-slate-900/60 px-3 py-2">
+                        <span className="text-slate-400">全局默认调仓比例</span>
+                        <span className="font-medium text-slate-100">
+                          {currentStrategyConfig.transferRatio}%
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl bg-slate-900/60 px-3 py-2">
+                        <span className="text-slate-400">Polygon 调仓比例（生效值）</span>
+                        <span className="font-medium text-slate-100">
+                          {currentStrategyConfig.polygonThreshold?.exists
+                            ? `${currentStrategyConfig.polygonThreshold.transferRatio}% (单独配置)`
+                            : `${currentStrategyConfig.transferRatio}% (使用全局默认)`}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl bg-slate-900/60 px-3 py-2">
+                        <span className="text-slate-400">最小跨链金额</span>
+                        <span className="font-medium text-slate-100">
+                          {Number(currentStrategyConfig.minCrossChainValueUsd) > 0
+                            ? `${ethers.formatEther(currentStrategyConfig.minCrossChainValueUsd)} ETH 等值`
+                            : "未设置"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl bg-slate-900/60 px-3 py-2">
+                        <span className="text-slate-400">首选逃生链</span>
+                        <span className="font-medium text-slate-100">
+                          {Number(currentStrategyConfig.primarySafeChainId) === 7001
+                            ? "ZetaChain"
+                            : Number(currentStrategyConfig.primarySafeChainId) === 80002
+                            ? "Polygon"
+                            : `Chain ${currentStrategyConfig.primarySafeChainId.toString()}`}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-amber-400">
+                      未检测到链上策略配置，请先在「策略配置」tab 中配置并写入策略
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-3 rounded-3xl border border-slate-800 bg-slate-950/70 p-4">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold text-slate-200">
                     链上防御执行记录
                   </p>
                   {account && isGuardian && (
-                    <button
-                      onClick={handleExecuteDefense}
-                      disabled={loading}
-                      className="rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {loading ? "执行中..." : "🚀 触发防御动作（Demo）"}
-                    </button>
+                    <div className="flex flex-col items-end gap-2">
+                      <button
+                        onClick={handleExecuteDefense}
+                        disabled={loading || onchainRiskMode === null}
+                        className="rounded-full bg-sky-500 px-4 py-2 text-xs font-medium text-slate-950 shadow-lg shadow-sky-500/30 transition hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-50"
+                        title={
+                          onchainRiskMode === null
+                            ? "请先在「策略配置」tab 中配置并写入策略到链上"
+                            : ""
+                        }
+                      >
+                        {loading ? "执行中..." : "🚀 触发防御动作（Demo）"}
+                      </button>
+                      {onchainRiskMode === null && (
+                        <p className="text-[10px] text-amber-400">
+                          请先在「策略配置」tab 中配置策略
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
 

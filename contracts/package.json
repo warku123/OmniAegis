@@ -7,9 +7,14 @@
     "deploy:zetachain": "hardhat run scripts/deploy-guardian.ts --network zetachainTestnet",
     "deploy:security": "hardhat run scripts/deploy-security-registry.ts --network zetachainTestnet",
     "deploy:strategy": "hardhat run scripts/deploy-strategy-registry.ts --network zetachainTestnet",
+    "deploy:zeta-to-sepolia": "hardhat run scripts/deploy-zeta-to-sepolia.ts --network zetachainTestnet",
     "demo:update-security": "hardhat run scripts/demo-update-security.ts --network zetachainTestnet",
-    "cleanup:legacy-chains": "hardhat run scripts/cleanup-legacy-chains.ts --network zetachainTestnet",
-    "query:strategy": "hardhat run scripts/query-strategy.ts --network zetachainTestnet"
+    "query:strategy": "hardhat run scripts/query-strategy.ts --network zetachainTestnet",
+    "setup:guardian": "hardhat run scripts/set-guardian.ts --network zetachainTestnet",
+    "test:zeta-to-sepolia": "hardhat run scripts/test-zeta-to-sepolia.ts --network zetachainTestnet",
+    "wrap:zeta": "hardhat run scripts/wrap-zeta.ts --network zetachainTestnet",
+    "transfer:wzeta": "hardhat run scripts/transfer-wzeta-to-contract.ts --network zetachainTestnet",
+    "swap:zeta-to-eth": "hardhat run scripts/swap-zeta-to-eth-sepolia.ts --network zetachainTestnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",

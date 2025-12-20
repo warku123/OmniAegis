@@ -19,6 +19,16 @@ const config = {
       chainId: 7001,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
+    polygonTestnet: {
+      url: "https://rpc-amoy.polygon.technology",
+      chainId: 80002,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    },
+    polygonAmoy: {
+      url: "https://rpc-amoy.polygon.technology",
+      chainId: 80002,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    }
   },
 };
 

@@ -1,6 +1,6 @@
 // 合约 ABI 和地址配置
 export const GUARDIAN_CONTRACT_ADDRESS =
-  "0xe8fA020A8665B8BCC47835C979ed4A7999c24f8e";
+  "0x91AdED71A60Ad8110F2F77cDd4AF70b3E01310a2";
 
 export const SECURITY_REGISTRY_ADDRESS =
   "0x0472a36dC5497a4F8AB16bE37D235424484f7061";
@@ -565,6 +565,24 @@ export const GUARDIAN_ABI = [
       },
     ],
     name: "executeDefense",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        internalType: "string",
+        name: "metadata",
+        type: "string",
+      },
+      {
+        internalType: "uint256",
+        name: "polygonBalanceHint",
+        type: "uint256",
+      },
+    ],
+    name: "executeDefenseWithCrossChainExit",
     outputs: [],
     stateMutability: "nonpayable",
     type: "function",

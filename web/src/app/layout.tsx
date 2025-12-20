@@ -70,7 +70,7 @@ export default function RootLayout({
               </nav>
             </div>
           </header>
-          {children}
+        {children}
         </div>
       </body>
     </html>

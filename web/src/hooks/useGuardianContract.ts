@@ -123,6 +123,34 @@ export function useGuardianContract() {
     }
   };
 
+  // 执行防御动作并触发跨链退出（使用新的合约入口）
+  const executeDefenseWithCrossChainExit = async (
+    metadata: string,
+    polygonBalanceHint: bigint
+  ) => {
+    if (!contract || !isGuardian) {
+      throw new Error("只有 guardian 可以执行防御动作");
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const tx = await contract.executeDefenseWithCrossChainExit(
+        metadata,
+        polygonBalanceHint
+      );
+      await tx.wait();
+      const count = await contract.getActionsCount();
+      setActionsCount(Number(count));
+      return tx.hash as string;
+    } catch (err: any) {
+      const msg = err?.message ?? "执行防御动作失败";
+      setError(msg);
+      throw new Error(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 获取单条防御记录
   const getAction = async (actionId: number): Promise<DefenseAction | null> => {
     if (!contract) return null;
@@ -165,6 +193,7 @@ export function useGuardianContract() {
     error,
     setGuardian,
     executeDefense,
+    executeDefenseWithCrossChainExit,
     getAction,
     refresh,
   };

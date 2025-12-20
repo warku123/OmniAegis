@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 /// @title OmniAegisGuardian
-/// @notice 极简版本的“防御控制器”，用于在 ZetaChain Testnet 上演示
-///         由前端 / off-chain AI 触发的防御操作入口。
+/// @notice 防御控制器，用于在 ZetaChain Testnet 上记录防御动作
+///         由前端 / off-chain AI 触发的防御操作入口
 contract OmniAegisGuardian {
     address public owner;
 
@@ -50,7 +50,7 @@ contract OmniAegisGuardian {
         emit GuardianUpdated(guardian, allowed);
     }
 
-    /// @notice 记录一次“防御策略执行”，真实项目中这里可以集成跨链调用 / 资产操作
+    /// @notice 记录一次“防御策略执行”
     /// @param actionType 文本类型标记，如 "CROSS_CHAIN_EXIT"
     /// @param metadata 详细信息（可用 JSON 字符串存放多链仓位、风险评分等）
     function executeDefense(
@@ -68,6 +68,30 @@ contract OmniAegisGuardian {
         emit DefenseExecuted(
             msg.sender,
             actionType,
+            metadata,
+            actions.length - 1
+        );
+    }
+
+    /// @notice 记录跨链退出防御动作
+    /// @dev 只记录防御动作，跨链执行由前端直接调用 Polygon 合约执行
+    /// @param metadata 前端/AI 生成的 JSON 字符串快照
+    function executeDefenseWithCrossChainExit(
+        string calldata metadata,
+        uint256 /* polygonBalanceHint - 保留参数以兼容前端调用 */
+    ) external onlyGuardian {
+        // 记录防御动作
+        DefenseAction memory action = DefenseAction({
+            triggeredBy: msg.sender,
+            actionType: "CROSS_CHAIN_EXIT",
+            metadata: metadata,
+            timestamp: block.timestamp
+        });
+
+        actions.push(action);
+        emit DefenseExecuted(
+            msg.sender,
+            "CROSS_CHAIN_EXIT",
             metadata,
             actions.length - 1
         );
