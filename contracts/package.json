@@ -9,6 +9,8 @@
     "deploy:strategy": "hardhat run scripts/deploy-strategy-registry.ts --network zetachainTestnet",
     "deploy:zeta-to-sepolia": "hardhat run scripts/deploy-zeta-to-sepolia.ts --network zetachainTestnet",
     "demo:update-security": "hardhat run scripts/demo-update-security.ts --network zetachainTestnet",
+    "security:safe": "hardhat run scripts/security-set-safe.ts --network zetachainTestnet",
+    "security:danger": "hardhat run scripts/security-set-danger.ts --network zetachainTestnet",
     "query:strategy": "hardhat run scripts/query-strategy.ts --network zetachainTestnet",
     "setup:guardian": "hardhat run scripts/set-guardian.ts --network zetachainTestnet",
     "test:zeta-to-sepolia": "hardhat run scripts/test-zeta-to-sepolia.ts --network zetachainTestnet",
